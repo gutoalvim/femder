@@ -21,7 +21,7 @@ R = fd.Receiver([0,1,1.2])
 
 BC = fd.BC(AC,AP)
 BC.normalized_admittance(2,0.02)
-BC.rigid(1)
+BC.rigid(3)
 
 grid = fd.GridImport3D(AP,path_to_geo, fmax=200, num_freq=6, plot=False,scale=1)
 
@@ -33,7 +33,7 @@ pN = obj.evaluate(R)
 
 import matplotlib.pyplot as plt
 
-data =np.genfromtxt('../3d_valid.txt')
+data =np.genfromtxt('../3d_valid_Z.txt')
 
 plt.semilogx(data[:,0],data[:,1]+4,label='notGut')
 plt.semilogx(AC.freq,10*np.log10((pN*np.conj(pN))/(2e-5)**2),linewidth=3,label='gut')

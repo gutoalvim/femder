@@ -7,6 +7,7 @@ Created on Sat Nov 28 23:33:54 2020
 import numpy as np
 from scipy.sparse.linalg import spsolve
 import time 
+from tqdm import tqdm
 def find_no(nos,coord=[0,0,0]):
     gpts = nos
     coord = np.array(coord)
@@ -187,7 +188,7 @@ class FEM3D:
             
             for ii in range(len(self.S.coord)):
                 self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
-            for N in range(len(self.freq)):
+            for N in tqdm(range(len(self.freq))):
                 Ag = np.zeros_like(self.Q)
                 i = 0
                 for bl in self.number_ID_faces:
@@ -205,7 +206,7 @@ class FEM3D:
             for ii in range(len(self.S.coord)):
                 self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
             i = 0
-            for N in range(len(self.freq)):
+            for N in tqdm(range(len(self.freq))):
                 G = self.H - (self.w[N]**2)*self.Q
                 b = -1j*self.w[N]*self.q
                 ps = spsolve(G,b)
