@@ -1,5 +1,5 @@
 # femder
-A Finite Element Method code for acoustics written for my undergraduate class "Métodos Numericos em Acústicas e Vibrações" by Dr. Paulo Mareze
+A Finite Element Method code for acoustics written for my undergraduate class "Métodos Numéricos em Acústica e Vibrações" by Dr. Paulo Mareze
 
 # dependencies
 
