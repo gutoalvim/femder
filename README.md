@@ -3,4 +3,4 @@ A Finite Element Method code for acoustics written for my undergraduate class "M
 
 # dependencies
 
-pip install numpy scipy gmsh meshio matplotlib tqdm numba
+pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba
