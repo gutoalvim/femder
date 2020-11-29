@@ -10,7 +10,13 @@ import time
 from tqdm import tqdm
 import warnings
 from numba import jit
+import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
+
+
+def p2SPL(p):
+    SPL = 10*np.log10(0.5*p*np.conj(p)/(2e-5)**2)
+    return SPL
 def find_no(nos,coord=[0,0,0]):
     gpts = nos
     coord = np.array(coord)
@@ -24,7 +30,7 @@ def find_no(nos,coord=[0,0,0]):
 
     return indx
 
-# @jit
+@jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
     He = np.zeros([4,4])
@@ -58,7 +64,7 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     
     return He,Qe
 
-# @jit
+@jit
 def int_tri_impedance_simpl(coord_el,npg):
 
 
@@ -227,10 +233,81 @@ class FEM3D:
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
                 
-    def evaluate(self,R):
+    def evaluate(self,R,plot=False):
         self.R = R
 
         self.pR = np.ones([len(self.freq),len(R.coord)],dtype = np.complex128)
-        for i in range(len(self.R.coord)):
-            self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
-        return self.pR 
+        if plot:
+            plt.style.use('seaborn-notebook')
+            plt.figure(figsize=(5*1.62,5))
+            for i in range(len(self.R.coord)):
+                self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+                plt.semilogx(self.freq,p2SPL(self.pR[:,i]),label=f'R{i} | {self.R.coord[0]}m')
+                
+            if len(self.R.coord) > 1:
+                plt.semilogx(self.freq,np.mean(p2SPL(self.pR)),label='Average')
+            
+            plt.grid()
+            plt.legend()
+            plt.xlabel('Frequency[Hz]')
+            plt.ylabel('SPL [dB]')
+            plt.show()
+        else:
+            for i in range(len(self.R.coord)):
+                self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+        return self.pR
+    
+    def surf_evaluate(self,freq,renderer='notebook'):
+        import plotly.graph_objs as go
+        
+        fi = np.argwhere(self.freq==freq)[0][0]
+        vertices = self.nos[np.unique(self.elem_surf)].T
+        elements = self.elem_surf.T
+
+        values = np.abs(self.pN[fi,np.unique(self.elem_surf)])
+        print(values.shape)
+        fig =  go.Figure(go.Mesh3d(
+            x=vertices[0, :],
+            y=vertices[1, :],
+            z=vertices[2, :],
+            i=elements[0,:],
+            j=elements[1,:],
+            k=elements[2,:],
+            intensity = values,
+            colorscale= 'Jet',
+            intensitymode='vertex',
+ 
+        ))  
+        import plotly.io as pio
+        pio.renderers.default = renderer
+        fig.show()
+        
+    def plot_problem(self,renderer='notebook'):
+        
+        import plotly.figure_factory as ff
+        import plotly.graph_objs as go
+        
+        vertices = self.nos[np.unique(self.elem_surf)].T
+        elements = self.elem_surf.T
+        fig = ff.create_trisurf(
+            x=vertices[0, :],
+            y=vertices[1, :],
+            z=vertices[2, :],
+            simplices=elements.T,
+            color_func=elements.shape[1] * ["rgb(255, 222, 173)"],
+        )
+        fig['data'][0].update(opacity=0.3)
+        
+        fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        try:
+            if self.R != None:
+                fig.add_trace(go.Scatter3d(x = self.R.coord[:,0], y = self.R.coord[:,1], z = self.R.coord[:,2],name="Receivers",mode='markers'))
+        except:
+            pass
+        
+        if self.S != None:    
+            if self.S.wavetype == "spherical":
+                fig.add_trace(go.Scatter3d(x = self.S.coord[:,0], y = self.S.coord[:,1], z = self.S.coord[:,2],name="Sources",mode='markers'))
+        import plotly.io as pio
+        pio.renderers.default = renderer
+        fig.show()

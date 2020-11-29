@@ -1,7 +1,7 @@
 import numpy as np
 #import toml
-from bemder.controlsair import load_cfg
-from bemder.controlsair import sph2cart, cart2sph
+from femder.controlsair import load_cfg
+from femder.controlsair import sph2cart, cart2sph
 # from bemder.rayinidir import RayInitialDirections
 # 
 

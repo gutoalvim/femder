@@ -11,7 +11,7 @@ path_to_geo = "Mshs\\FEM_3D\\cplx_room.geo"
 
 
 AP = fd.AirProperties(c0 = 343)
-AC = fd.AlgControls(AP,20,200,1)
+AC = fd.AlgControls(AP,200,200,1)
 
 S = fd.Source("spherical")
 S.coord = np.array([[-1,2.25,1.2],[1,2.25,1.2]])
@@ -29,6 +29,8 @@ obj = fd.FEM3D(grid,S,AP,AC,BC)
 obj.compute()
 pN = obj.evaluate(R)
 
+#%%
+obj.surf_evaluate(200)
 #%%
 
 import matplotlib.pyplot as plt
