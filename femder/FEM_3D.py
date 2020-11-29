@@ -8,6 +8,9 @@ import numpy as np
 from scipy.sparse.linalg import spsolve
 import time 
 from tqdm import tqdm
+import warnings
+from numba import jit
+warnings.filterwarnings("ignore")
 def find_no(nos,coord=[0,0,0]):
     gpts = nos
     coord = np.array(coord)
@@ -21,6 +24,7 @@ def find_no(nos,coord=[0,0,0]):
 
     return indx
 
+# @jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
     He = np.zeros([4,4])
@@ -54,6 +58,7 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     
     return He,Qe
 
+# @jit
 def int_tri_impedance_simpl(coord_el,npg):
 
 
@@ -69,31 +74,31 @@ def int_tri_impedance_simpl(coord_el,npg):
     p = (a+b+c)/2
     area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
     
-    if npg == 1:
-    #Pontos de Gauss para um tetraedro
-        ptx = 1/3
-        pty = 1/3
-        wtz= 1#/6 * 6 # Pesos de Gauss
-        qsi1 = ptx
-        qsi2 = pty
-        wtx = wtz
-        wty = wtz
+    # if npg == 1:
+    # #Pontos de Gauss para um tetraedro
+    #     ptx = 1/3
+    #     pty = 1/3
+    #     wtz= 1#/6 * 6 # Pesos de Gauss
+    #     qsi1 = ptx
+    #     qsi2 = pty
+    #     wtx = wtz
+    #     wty = wtz
         
         
-    if npg == 3:
+    # if npg == 3:
     #Pontos de Gauss para um tetraedro
-        aa = 1/6
-        bb = 2/3
-        ptx = np.array([aa,aa,bb])
-        pty = np.array([aa,bb,aa])
-        wtz= np.array([1/6,1/6,1/6])*2 # Pesos de Gauss
-    
-        for indx in range(npg):
-            qsi1 = ptx[indx]
-            wtx =  wtz[indx]
-        for indx in range(npg):
-            qsi2 = pty[indx]
-            wty =  wtz[indx]
+    aa = 1/6
+    bb = 2/3
+    ptx = np.array([aa,aa,bb])
+    pty = np.array([aa,bb,aa])
+    wtz= np.array([1/6,1/6,1/6])*2 # Pesos de Gauss
+
+    for indx in range(npg):
+        qsi1 = ptx[indx]
+        wtx =  wtz[indx]
+    for indx in range(npg):
+        qsi2 = pty[indx]
+        wty =  wtz[indx]
         
     Ni = np.array([[qsi1],[qsi2],[1-qsi1-qsi2]])
     
@@ -149,7 +154,6 @@ class FEM3D:
         self.NumNosC = Grid.NumNosC
         self.NumElemC = Grid.NumElemC
         self.npg = 1
-        
     def compute(self,timeit=True):
         then = time.time()
         self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
