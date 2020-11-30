@@ -53,16 +53,17 @@ class GridImport():
         self.nelem = self.nnos -1
         os.remove(path_name+'/current_mesh.msh')
         
-class GridImport3D():
-    def __init__(self,AP,path_to_geo,S,R, fmax=1000, num_freq=6, plot=False,scale=1):
+class GridImport3D:
+    def __init__(self,AP,S,R,path_to_geo,fmax=1000, num_freq=6,scale=1):
         
+        self.R = R
+        self.S = S
         self.path_to_geo = path_to_geo
         self.fmax = fmax
         self.num_freq = num_freq
-        self.plot = plot
         self.scale = scale
-        self.R = R
-        self.S = S
+
+  
         self.c0 = np.real(AP.c0)
     
         import meshio
@@ -77,26 +78,31 @@ class GridImport3D():
         # gmsh.model.occ.dilate(dT,0,0,0,1/scale,1/scale,1/scale)
         gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
         gmsh.option.setNumber("Mesh.MeshSizeMin", 0.5*(self.c0*self.scale)/self.fmax/self.num_freq)
+        
+
         lc = (self.c0*self.scale)/self.fmax/self.num_freq
         tg = gmsh.model.occ.getEntities(3)
-        for i in range(len(self.R.coord)):
-            it = gmsh.model.geo.addPoint(self.R.coord[0,i], self.R.coord[1,i], self.R.coord[2,i], lc, -1)
-            gmsh.model.mesh.embed(0, [it], 3, tg)
-        for i in range(len(self.R.coord)):
-            it = gmsh.model.geo.addPoint(self.S.coord[0,i], self.S.coord[1,i], self.S.coord[2,i], lc, -1)
-            gmsh.model.mesh.embed(0, [it], 3, tg)
+        
+        if self.R != None:
+            for i in range(len(self.R.coord)):
+                it = gmsh.model.occ.addPoint(self.R.coord[i,0], self.R.coord[i,1], self.R.coord[i,2], lc, -1)
+                gmsh.model.occ.synchronize()
+                gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
+        if self.S != None:
+            for i in range(len(self.S.coord)):
+                it = gmsh.model.occ.addPoint(self.S.coord[i,0], self.S.coord[i,1], self.S.coord[i,2], lc, -1)
+                gmsh.model.occ.synchronize()
+                gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
         
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-        gmsh.model.mesh.optimize("Netgen")
+        # gmsh.model.mesh.optimize("Netgen")
         gmsh.model.occ.synchronize()
         
         
         path_name = os.path.dirname(self.path_to_geo)
         
         gmsh.write(path_name+'/current_mesh.msh')   
-        if self.plot:
-            gmsh.fltk.run()     
         gmsh.finalize() 
         
         msh = meshio.read(path_name+'/current_mesh.msh')

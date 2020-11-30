@@ -8,7 +8,6 @@ class BC():
         self.v = {}
         self.rhoc = []
         self.cc = []
-    
     def impedance(self,domain_index, impedance):
         """
         

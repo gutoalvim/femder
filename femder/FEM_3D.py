@@ -30,7 +30,7 @@ def find_no(nos,coord=[0,0,0]):
 
     return indx
 
-@jit(nopython=True)
+@jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
     He = np.zeros([4,4])
@@ -63,7 +63,9 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     Qe = Qe + wtz*wtz*wtz*argQe1 
     
     return He,Qe
-@jit(nopython=True)
+
+
+@jit
 def int_tetra_4gauss(coord_el,c0,rho0):
 
     He = np.zeros([4,4])
@@ -107,7 +109,7 @@ def int_tetra_4gauss(coord_el,c0,rho0):
     
     return He,Qe
 
-@jit(nopython=True)
+@jit
 def int_tri_impedance_simpl(coord_el,npg):
 
 
@@ -212,11 +214,11 @@ class FEM3D:
         self.q = np.zeros([self.NumNosC,1],dtype = np.complex128)
         
         #Assemble H(Massa) and Q(Rigidez) matrix
-        for e in range(self.NumElemC):
+        # print('Assembling Matrix')
+        for e in tqdm(range(self.NumElemC)):
             con = self.elem_vol[e,:]
             coord_el = self.nos[con,:]
             if self.npg == 1:
-                
                 He, Qe = int_tetra_simpl(coord_el,self.c0,self.rho0,self.npg)   
             elif self.npg == 4:
                 He, Qe = int_tetra_4gauss(coord_el,self.c0,self.rho0)   
@@ -242,7 +244,7 @@ class FEM3D:
             
             pN = []
             
-            
+            # print('Solving System')
             for ii in range(len(self.S.coord)):
                 self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
             for N in tqdm(range(len(self.freq))):

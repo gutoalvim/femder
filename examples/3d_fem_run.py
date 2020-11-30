@@ -7,7 +7,7 @@ Created on Sat Nov 28 00:30:38 2020
 import femder as fd
 import numpy as np
 
-path_to_geo = "..\\Mshs\\FEM_3D\\cplx_room.geo"
+path_to_geo = "Mshs\\FEM_3D\\cplx_room.geo"
 
 
 
@@ -23,15 +23,17 @@ R = fd.Receiver([0,1,1.2])
 BC = fd.BC(AC,AP)
 BC.normalized_admittance(2,0.02)
 BC.rigid(3)
-
-grid = fd.GridImport3D(AP,S,R,path_to_geo, fmax=200, num_freq=6, plot=False,scale=1)
+#%%
+grid = fd.GridImport3D(AP,S,R,path_to_geo,fmax = 200,num_freq=6,scale=1)
 
 obj = fd.FEM3D(grid,S,AP,AC,BC)
+obj.npg = 4
 #%%
 obj.compute()
+#%%
 pN = obj.evaluate(R,plot=True)
 
 #%%
 import matplotlib.pyplot as plt
-pp = np.genfromtxt('../../3d_valid_Z.txt')
-plt.semilogx(AC.freq,pp[:,1])
+pp = np.genfromtxt('../3d_valid_Z_refine.txt')
+plt.semilogx(AC.freq,pp[:,1],label='Validation',linewidth = 5,alpha=0.5)
