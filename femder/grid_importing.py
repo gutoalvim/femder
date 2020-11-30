@@ -54,7 +54,7 @@ class GridImport():
         os.remove(path_name+'/current_mesh.msh')
         
 class GridImport3D:
-    def __init__(self,AP,S,R,path_to_geo,fmax=1000, num_freq=6,scale=1):
+    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1):
         
         self.R = R
         self.S = S

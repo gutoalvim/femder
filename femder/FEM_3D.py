@@ -10,6 +10,8 @@ import time
 from tqdm import tqdm
 import warnings
 from numba import jit
+from numba import njit
+
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 
@@ -64,8 +66,7 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     
     return He,Qe
 
-
-@jit
+# @jit
 def int_tetra_4gauss(coord_el,c0,rho0):
 
     He = np.zeros([4,4])
@@ -80,7 +81,13 @@ def int_tetra_4gauss(coord_el,c0,rho0):
     ptz = np.array([b,b,a,b])
     
     weigths = np.array([1/24,1/24,1/24,1/24])*6
-
+    
+    ## argHe1 is independent of qsi's, therefore it can be pre computed
+    GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
+    Ja = (GNi@coord_el)
+    detJa = (1/6) * np.linalg.det(Ja)
+    B = (np.linalg.inv(Ja)@GNi)
+    argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
     for indx in range(4):
         qsi1 = ptx[indx]
         wtx =  weigths[indx]
@@ -92,15 +99,10 @@ def int_tetra_4gauss(coord_el,c0,rho0):
                 wtz =  weigths[indx]
                 
                 Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
-                GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
 
-                Ja = (GNi@coord_el)
-                detJa = (1/6) * np.linalg.det(Ja)
-                # print(detJa)
-                B = (np.linalg.inv(Ja)@GNi)
                 # B = spsolve(Ja,GNi)
                 # print(B.shape)              
-                argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
+                
                 # print(np.matmul(Ni,np.transpose(Ni)).shape)
                 argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
                 
@@ -314,7 +316,7 @@ class FEM3D:
         elements = self.elem_surf.T
 
         values = np.abs(self.pN[fi,np.unique(self.elem_surf)])
-        print(values.shape)
+        print(elements.shape)
         fig =  go.Figure(go.Mesh3d(
             x=vertices[0, :],
             y=vertices[1, :],

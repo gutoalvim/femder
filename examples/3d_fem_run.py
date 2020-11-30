@@ -24,16 +24,21 @@ BC = fd.BC(AC,AP)
 BC.normalized_admittance(2,0.02)
 BC.rigid(3)
 #%%
-grid = fd.GridImport3D(AP,S,R,path_to_geo,fmax = 200,num_freq=6,scale=1)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1)
 
 obj = fd.FEM3D(grid,S,AP,AC,BC)
-obj.npg = 4
+obj.npg = 1
 #%%
 obj.compute()
 #%%
 pN = obj.evaluate(R,plot=True)
 
+
+#%%
+obj.plot_problem(renderer='browser')
+obj.surf_evaluate(freq = 200,renderer = 'browser')
 #%%
 import matplotlib.pyplot as plt
 pp = np.genfromtxt('../3d_valid_Z_refine.txt')
 plt.semilogx(AC.freq,pp[:,1],label='Validation',linewidth = 5,alpha=0.5)
+plt.legend()
