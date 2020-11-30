@@ -30,7 +30,7 @@ def find_no(nos,coord=[0,0,0]):
 
     return indx
 
-@jit
+@jit(nopython=True)
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
     He = np.zeros([4,4])
@@ -63,8 +63,51 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     Qe = Qe + wtz*wtz*wtz*argQe1 
     
     return He,Qe
+@jit(nopython=True)
+def int_tetra_4gauss(coord_el,c0,rho0):
 
-@jit
+    He = np.zeros([4,4])
+    Qe = np.zeros([4,4])
+    
+# if npg == 1:
+    #Pontos de Gauss para um tetraedro
+    a = 0.5854101966249685
+    b = 0.1381966011250105
+    ptx = np.array([a,b,b,a])
+    pty = np.array([b,a,b,b])
+    ptz = np.array([b,b,a,b])
+    
+    weigths = np.array([1/24,1/24,1/24,1/24])*6
+
+    for indx in range(4):
+        qsi1 = ptx[indx]
+        wtx =  weigths[indx]
+        for indy in range(4):
+            qsi2 = pty[indy]
+            wty =  weigths[indx]
+            for indz in range(4):
+                qsi3 = ptz[indz]
+                wtz =  weigths[indx]
+                
+                Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
+                GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
+
+                Ja = (GNi@coord_el)
+                detJa = (1/6) * np.linalg.det(Ja)
+                # print(detJa)
+                B = (np.linalg.inv(Ja)@GNi)
+                # B = spsolve(Ja,GNi)
+                # print(B.shape)              
+                argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
+                # print(np.matmul(Ni,np.transpose(Ni)).shape)
+                argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+                
+                He = He + wtx*wty*wtz*argHe1   
+                Qe = Qe + wtx*wty*wtz*argQe1 
+    
+    return He,Qe
+
+@jit(nopython=True)
 def int_tri_impedance_simpl(coord_el,npg):
 
 
@@ -102,17 +145,17 @@ def int_tri_impedance_simpl(coord_el,npg):
     for indx in range(npg):
         qsi1 = ptx[indx]
         wtx =  wtz[indx]
-    for indx in range(npg):
-        qsi2 = pty[indx]
-        wty =  wtz[indx]
-        
-    Ni = np.array([[qsi1],[qsi2],[1-qsi1-qsi2]])
-    
-        
-    detJa= area_elm
-    argAe1 = Ni@np.transpose(Ni)*detJa
-    
-    Ae = Ae + wtx*wty*argAe1
+        for indx in range(npg):
+            qsi2 = pty[indx]
+            wty =  wtz[indx]
+            
+            Ni = np.array([[qsi1],[qsi2],[1-qsi1-qsi2]])
+            
+                
+            detJa= area_elm
+            argAe1 = Ni@np.transpose(Ni)*detJa
+            
+            Ae = Ae + wtx*wty*argAe1
     
     return Ae
 class FEM3D:
@@ -160,6 +203,7 @@ class FEM3D:
         self.NumNosC = Grid.NumNosC
         self.NumElemC = Grid.NumElemC
         self.npg = 1
+        
     def compute(self,timeit=True):
         then = time.time()
         self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
@@ -171,8 +215,11 @@ class FEM3D:
         for e in range(self.NumElemC):
             con = self.elem_vol[e,:]
             coord_el = self.nos[con,:]
-            
-            He, Qe = int_tetra_simpl(coord_el,self.c0,self.rho0,self.npg)   
+            if self.npg == 1:
+                
+                He, Qe = int_tetra_simpl(coord_el,self.c0,self.rho0,self.npg)   
+            elif self.npg == 4:
+                He, Qe = int_tetra_4gauss(coord_el,self.c0,self.rho0)   
             
             self.H[con[:,np.newaxis],con] = self.H[con[:,np.newaxis],con] + He
             self.Q[con[:,np.newaxis],con] = self.Q[con[:,np.newaxis],con] + Qe
