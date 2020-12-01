@@ -70,43 +70,53 @@ class GridImport3D:
         import gmsh
         import sys
         import os
-        
-        gmsh.initialize(sys.argv)
-        gmsh.open(self.path_to_geo) # Open msh
+        filename, file_extension = os.path.splitext(path_to_geo)
+        if path_to_geo == 'geo' or '.brep':
+            gmsh.initialize(sys.argv)
+            gmsh.open(self.path_to_geo) # Open msh
+    
+            # dT = gmsh.model.getEntities()
+            # gmsh.model.occ.dilate(dT,0,0,0,1/scale,1/scale,1/scale)
+            gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
+            gmsh.option.setNumber("Mesh.MeshSizeMin", 0.5*(self.c0*self.scale)/self.fmax/self.num_freq)
+            
+    
+            lc = 0#(self.c0*self.scale)/self.fmax/self.num_freq
+            tg = gmsh.model.occ.getEntities(3)
+            # tg2 = gmsh.model.occ.getEntities(2)
+            if self.R != None:
+                for i in range(len(self.R.coord)):
+                    it = gmsh.model.occ.addPoint(self.R.coord[i,0], self.R.coord[i,1], self.R.coord[i,2], lc, -1)
+                    gmsh.model.occ.synchronize()
+                    gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
+    
+            if self.S != None:
+                for i in range(len(self.S.coord)):
+                    it = gmsh.model.occ.addPoint(self.S.coord[i,0], self.S.coord[i,1], self.S.coord[i,2], lc, -1)
+                    gmsh.model.occ.synchronize()
+                    gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
+             
 
-        # dT = gmsh.model.getEntities()
-        # gmsh.model.occ.dilate(dT,0,0,0,1/scale,1/scale,1/scale)
-        gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
-        gmsh.option.setNumber("Mesh.MeshSizeMin", 0.5*(self.c0*self.scale)/self.fmax/self.num_freq)
-        
-
-        lc = (self.c0*self.scale)/self.fmax/self.num_freq
-        tg = gmsh.model.occ.getEntities(3)
-        
-        if self.R != None:
-            for i in range(len(self.R.coord)):
-                it = gmsh.model.occ.addPoint(self.R.coord[i,0], self.R.coord[i,1], self.R.coord[i,2], lc, -1)
-                gmsh.model.occ.synchronize()
-                gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
-        if self.S != None:
-            for i in range(len(self.S.coord)):
-                it = gmsh.model.occ.addPoint(self.S.coord[i,0], self.S.coord[i,1], self.S.coord[i,2], lc, -1)
-                gmsh.model.occ.synchronize()
-                gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
-        
-        gmsh.model.mesh.generate(3)
-        gmsh.model.mesh.setOrder(1)
-        # gmsh.model.mesh.optimize("Netgen")
-        gmsh.model.occ.synchronize()
-        
-        
-        path_name = os.path.dirname(self.path_to_geo)
-        
-        gmsh.write(path_name+'/current_mesh.msh')   
-        gmsh.finalize() 
-        
-        msh = meshio.read(path_name+'/current_mesh.msh')
-        os.remove(path_name+'/current_mesh.msh')
+            # gmsh.model.mesh.embed(0, [15000], 3, tg[0][1])
+            gmsh.model.mesh.generate(3)
+            gmsh.model.mesh.setOrder(1)
+            
+            # gmsh.model.mesh.optimize()
+            gmsh.model.occ.synchronize()
+            
+            
+            gmsh.fltk.run()
+            path_name = os.path.dirname(self.path_to_geo)
+            
+            gmsh.write(path_name+'/current_mesh.msh')   
+            gmsh.finalize() 
+            
+            msh = meshio.read(path_name+'/current_mesh.msh')
+        elif file_extension=='msh':
+            msh = meshio.read(path_to_geo)
+            
+        self.msh = msh
+        # os.remove(path_name+'/current_mesh.msh')
         self.nos = msh.points/scale
         
         self.elem_surf = msh.cells_dict["triangle"]

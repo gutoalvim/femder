@@ -29,7 +29,7 @@ def find_no(nos,coord=[0,0,0]):
         # print(gpts[i,:])
     # print(no_ind)    
     indx = no_ind.index(min(no_ind))
-
+    # print(min(no_ind))
     return indx
 
 @jit
@@ -308,15 +308,28 @@ class FEM3D:
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
         return self.pR
     
-    def surf_evaluate(self,freq,renderer='notebook'):
+    def surf_evaluate(self,freq,renderer='notebook',d_range = 45):
         import plotly.graph_objs as go
         
         fi = np.argwhere(self.freq==freq)[0][0]
-        vertices = self.nos[np.unique(self.elem_surf)].T
+        unq = np.unique(self.elem_surf)
+        uind = np.arange(np.amin(unq),np.amax(unq)+1,1)
+        
+        vertices = self.nos[uind].T
+        # vertices = self.nos[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
-
-        values = np.abs(self.pN[fi,np.unique(self.elem_surf)])
+        
+        values = np.real(p2SPL(self.pN[fi,uind]))
+        if d_range != None:
+            d_range = np.amax(values)-d_range
+            
+            values[values<d_range] = np.amax(values)-d_range
+        
+        
+        print(np.amin(values),np.amax(values))
+        print(vertices.shape)
         print(elements.shape)
+        print(values.shape)
         fig =  go.Figure(go.Mesh3d(
             x=vertices[0, :],
             y=vertices[1, :],
@@ -338,8 +351,9 @@ class FEM3D:
         import plotly.figure_factory as ff
         import plotly.graph_objs as go
         
-        vertices = self.nos[np.unique(self.elem_surf)].T
+        vertices = self.nos.T#[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
+        
         fig = ff.create_trisurf(
             x=vertices[0, :],
             y=vertices[1, :],
