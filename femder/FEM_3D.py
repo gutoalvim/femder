@@ -15,6 +15,10 @@ from numba import njit
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
 
 def p2SPL(p):
     SPL = 10*np.log10(0.5*p*np.conj(p)/(2e-5)**2)
@@ -45,7 +49,21 @@ def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
         H[con[:,np.newaxis],con] = H[con[:,np.newaxis],con] + He
         Q[con[:,np.newaxis],con] = Q[con[:,np.newaxis],con] + Qe
     return H,Q
-            
+
+@jit
+def fast_assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
+    H = H_zero
+    Q = Q_zero
+    for e in tqdm(range(NumElemC)):
+        con = elem_vol[e,:]
+        coord_el = nos[con,:]
+    
+        He, Qe = int_tetra_4gauss(coord_el,c0,rho0)   
+        
+        H[con[:,np.newaxis],con] = H[con[:,np.newaxis],con] + He
+        Q[con[:,np.newaxis],con] = Q[con[:,np.newaxis],con] + Qe
+    return H,Q
+              
 @jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
@@ -130,9 +148,9 @@ def int_tri_impedance_simpl(coord_el,npg):
 
 
     Ae = np.zeros([3,3])
-    xe = np.array(coord_el[:,0])[0]
-    ye = np.array(coord_el[:,1])[0]
-    ze = np.array(coord_el[:,2])[0]
+    xe = np.array(coord_el[:,0])
+    ye = np.array(coord_el[:,1])
+    ze = np.array(coord_el[:,2])
     #Formula de Heron - Area do Triangulo
     
     a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
@@ -176,6 +194,17 @@ def int_tri_impedance_simpl(coord_el,npg):
             Ae = Ae + wtx*wty*argAe1
     
     return Ae
+    # def damped_eigen(self,Q,H,A,mu)
+def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
+    Ag = np.zeros_like(Q,dtype=np.complex128)
+    i = 0
+    for bl in number_ID_faces:
+        Ag += A[:,:,i]*mu[bl][N]#/(self.rho0*self.c0)
+        i+=1
+    G = H + 1j*w[N]*Ag - (w[N]**2)*Q
+    b = -1j*w[N]*q
+    ps = spsolve(G,b)
+    return ps
 class FEM3D:
     def __init__(self,Grid,S,AP,AC,BC=None):
         """
@@ -224,25 +253,19 @@ class FEM3D:
         
     def compute(self,timeit=True):
         then = time.time()
-        self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
-        self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
+        if isinstance(self.c0, complex) or isinstance(self.rho0, complex):
+            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
+            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
+
+        else:
+            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
+            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
         self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype = np.complex128)
         self.q = np.zeros([self.NumNosC,1],dtype = np.complex128)
         
-        #Assemble H(Massa) and Q(Rigidez) matrix
-        # print('Assembling Matrix')
-        for e in tqdm(range(self.NumElemC)):
-            con = self.elem_vol[e,:]
-            coord_el = self.nos[con,:]
-            if self.npg == 1:
-                He, Qe = int_tetra_simpl(coord_el,self.c0,self.rho0,self.npg)   
-            elif self.npg == 4:
-                He, Qe = int_tetra_4gauss(coord_el,self.c0,self.rho0)   
-            
-            self.H[con[:,np.newaxis],con] = self.H[con[:,np.newaxis],con] + He
-            self.Q[con[:,np.newaxis],con] = self.Q[con[:,np.newaxis],con] + Qe
-   
-        
+
+        self.H,self.Q = assemble_Q_H_4(self.H,self.Q,self.NumElemC,self.elem_vol,self.nos,self.c0,self.rho0)
+                    
         #Assemble A(Amortecimento)
         npg = 3
         if self.BC != None:
@@ -250,9 +273,8 @@ class FEM3D:
             for bl in self.number_ID_faces:
                 indx = np.argwhere(self.domain_index_surf==bl)
                 for es in range(len(self.elem_surf[indx])):
-                    con = self.elem_surf[indx[es],:]
+                    con = self.elem_surf[indx[es],:][0]
                     coord_el = self.nos[con,:]
-                    con = con[0]
                     Ae = int_tri_impedance_simpl(coord_el, npg)
                     self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
                 i += 1
@@ -264,10 +286,11 @@ class FEM3D:
             for ii in range(len(self.S.coord)):
                 self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
             for N in tqdm(range(len(self.freq))):
-                Ag = np.zeros_like(self.Q)
+                # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
+                Ag = np.zeros_like(self.Q,dtype=np.complex128)
                 i = 0
                 for bl in self.number_ID_faces:
-                    Ag += self.A[:,:,i]*self.mu[bl][N]/(self.rho0*self.c0)
+                    Ag += self.A[:,:,i]*self.mu[bl][N]#/(self.rho0*self.c0)
                     i+=1
                 G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
                 b = -1j*self.w[N]*self.q
@@ -311,19 +334,6 @@ class FEM3D:
         self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
         self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
 
-        #Assemble H(Massa) and Q(Rigidez) matrix
-        # print('Assembling Matrix')
-        # for e in tqdm(range(self.NumElemC)):
-        #     con = self.elem_vol[e,:]
-        #     coord_el = self.nos[con,:]
-        #     if self.npg == 1:
-        #         He, Qe = int_tetra_simpl(coord_el,self.c0,self.rho0,self.npg)   
-        #     elif self.npg == 4:
-        #         He, Qe = int_tetra_4gauss(coord_el,self.c0,self.rho0)   
-            
-        #     self.H[con[:,np.newaxis],con] = self.H[con[:,np.newaxis],con] + He
-        #     self.Q[con[:,np.newaxis],con] = self.Q[con[:,np.newaxis],con] + Qe
-        
         self.H,self.Q = assemble_Q_H_4(self.H,self.Q,self.NumElemC,self.elem_vol,self.nos,self.c0,self.rho0)
             
         G = inv(self.Q)@(self.H)
@@ -333,7 +343,9 @@ class FEM3D:
             [wc,Vc] = eigs(G,self.neigs,which='SM')
         
         k = np.sort(np.sqrt(wc))
-        # indk = np.argsort(wc)
+        indk = np.argsort(wc)
+        # Vcn = Vc/np.amax(Vc)
+        self.Vc = Vc
         
         self.F_n = k/(2*np.pi)
         
@@ -348,6 +360,167 @@ class FEM3D:
                 print(f'Time taken: {self.t/60} min')
                 
         return self.F_n
+    
+    def amort_eigenfrequency(self,neigs=12,near_freq=None,timeit=True):
+        self.neigs = neigs
+        self.near = near_freq
+        
+        from numpy.linalg import inv
+        # from scipy.sparse.linalg import eigsh
+        from scipy.sparse.linalg import eigs
+        # from numpy.linalg import inv
+        
+        then = time.time()
+        self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
+        self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
+
+        
+        self.H,self.Q = assemble_Q_H_4(self.H,self.Q,self.NumElemC,self.elem_vol,self.nos,self.c0,self.rho0)
+            
+        G = inv(self.Q)@(self.H)
+        if self.near != None:
+            [wc,Vc] = eigs(G,self.neigs,sigma = 2*np.pi*(self.near**2),which='SM')
+        else:
+            [wc,Vc] = eigs(G,self.neigs,which='SM')
+        
+        # k = np.sort(np.sqrt(wc))
+        # indk = np.argsort(wc)
+        # Vcn = Vc/np.amax(Vc)
+        self.Vc = Vc
+        
+        fn = np.sqrt(wc)/(2*np.pi)
+        
+        self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype = np.complex128)
+        npg = 3
+        if self.BC != None:
+            i = 0
+            for bl in self.number_ID_faces:
+                indx = np.argwhere(self.domain_index_surf==bl)
+                for es in range(len(self.elem_surf[indx])):
+                    con = self.elem_surf[indx[es],:][0]
+                    coord_el = self.nos[con,:]
+                    Ae = int_tri_impedance_simpl(coord_el, npg)
+                    self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
+                i += 1
+        
+        fcn = np.zeros_like(fn,dtype=np.complex128)
+        for icc in tqdm(range(len(fn))):
+            Ag = np.zeros_like(self.Q,dtype=np.complex128)
+            i = 0
+            idxF = find_nearest(self.freq,fn[icc])
+            # print(idxF)
+            for bl in self.number_ID_faces:
+                Ag += self.A[:,:,i]*self.mu[bl][idxF]#/(self.rho0*self.c0)
+                # print((self.rho0*self.c0)*self.mu[bl][idxF])
+                i+=1
+            wn = 2*np.pi*fn[icc]
+            HA = self.H + 1j*wn*Ag
+            Ga = inv(self.Q)@(HA)
+            [wcc,Vcc] = eigs(Ga,neigs,which='SM')
+            fnc = np.sqrt(wcc)/(2*np.pi)
+            indfn = find_nearest(np.real(fnc), fn[icc])
+            fcn[icc] = fnc[indfn]
+        self.F_n = fcn
+        self.t = time.time()-then       
+        if timeit:
+            if self.t <= 60:
+                print(f'Time taken: {self.t} s')
+            elif 60 < self.t < 3600:
+                print(f'Time taken: {self.t/60} min')
+            elif self.t >= 3600:
+                print(f'Time taken: {self.t/60} min')
+                
+        return self.F_n
+        
+    def modal_superposition(self,R):
+        self.R = R
+        Mn = np.diag(self.Vc.T@self.Q@self.Vc)
+        # print(Mn.shape)
+        self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype = np.complex128)
+        npg = 3
+        if self.BC != None:
+            i = 0
+            for bl in self.number_ID_faces:
+                indx = np.argwhere(self.domain_index_surf==bl)
+                for es in range(len(self.elem_surf[indx])):
+                    con = self.elem_surf[indx[es],:][0]
+                    coord_el = self.nos[con,:]
+                    Ae = int_tri_impedance_simpl(coord_el, npg)
+                    self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
+                i += 1
+                
+            indS = [] 
+            indR = []
+            qindS = []
+            for ii in range(len(self.S.coord)): 
+                indS.append(find_no(self.nos,self.S.coord[ii,:]))
+                qindS.append(self.S.q[ii].ravel())  
+            for ii in range(len(self.R.coord)): 
+                indR.append([find_no(self.nos,self.R.coord[ii,:])])
+                
+            # print(qindS[1])
+            pmN = [] # np.zeros_like(self.freq,dtype=np.complex128)
+            for N in tqdm(range(len(self.freq))):
+                D = np.zeros_like(self.Q,dtype = np.complex128)
+                i = 0
+                
+                for bl in self.number_ID_faces:
+                    D += self.A[:,:,i]*self.mu[bl][N]
+                    i+=1
+                    
+                hn = np.diag(self.Vc.T@D@self.Vc)
+                # print(hn[0].shape)
+                An = 0 + 1j*0
+                for ir in range(len(indR)):
+                    for e in range(len(self.F_n)):
+                        for ii in range(len(indS)):
+                            wn = self.F_n[e]*2*np.pi
+                            # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
+                            # print(((wn-self.w[N])*Mn[e]))
+                            An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e]/((wn-self.w[N])*Mn[e])#+1j*2*hn[e]*wn*self.w[N])
+                            # print(An)
+                    pmN.append(An[0][0])
+                
+            self.pm = np.array(pmN)
+            
+        return self.pm
+            
+    def modal_evaluate(self,freq,renderer='notebook',d_range = None):
+        import plotly.graph_objs as go
+        
+        fi = find_nearest((np.real(self.F_n)),freq)
+        print(fi)
+        unq = np.unique(self.elem_surf)
+        uind = np.arange(np.amin(unq),np.amax(unq)+1,1)
+        
+        vertices = self.nos[uind].T
+        # vertices = self.nos[np.unique(self.elem_surf)].T
+        elements = self.elem_surf.T
+        
+        values = np.abs((self.Vc.T[fi,uind]))
+        if d_range != None:
+            d_range = np.amax(values)-d_range
+            
+            values[values<d_range] = np.amax(values)-d_range
+        
+        
+        fig =  go.Figure(go.Mesh3d(
+            x=vertices[0, :],
+            y=vertices[1, :],
+            z=vertices[2, :],
+            i=elements[0,:],
+            j=elements[1,:],
+            k=elements[2,:],
+            intensity = values,
+            colorscale= 'Jet',
+            intensitymode='vertex'
+            
+ 
+        ))  
+        fig.update_layout(title=dict(text = f'Frequency: {(np.real(self.F_n[fi])):.2f} Hz | Mode: {fi}'))
+        import plotly.io as pio
+        pio.renderers.default = renderer
+        fig.show()       
     def evaluate(self,R,plot=False):
         
         self.R = R
@@ -373,6 +546,7 @@ class FEM3D:
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
         return self.pR
     
+        
     def surf_evaluate(self,freq,renderer='notebook',d_range = 45):
         import plotly.graph_objs as go
         

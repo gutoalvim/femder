@@ -261,9 +261,9 @@ def int_tri_impedance_10(coord_el,npg):
 
 
     Ae = np.zeros([6,6])
-    xe = np.array(coord_el[:,0])[0]
-    ye = np.array(coord_el[:,1])[0]
-    ze = np.array(coord_el[:,2])[0]
+    xe = np.array(coord_el[:,0])
+    ye = np.array(coord_el[:,1])
+    ze = np.array(coord_el[:,2])
     #Formula de Heron - Area do Triangulo
     
     a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
@@ -351,7 +351,7 @@ class FEM3D:
         #Assemble H(Massa) and Q(Rigidez) matrix
         # print('Assembling Matrix')
         for e in tqdm(range(self.NumElemC)):
-            con = self.elem_vol[e,:]
+            con = self.elem_vol[e,:][0]
             # print(con)
             coord_el = self.nos[con,:]
 
@@ -370,9 +370,9 @@ class FEM3D:
             for bl in self.number_ID_faces:
                 indx = np.argwhere(self.domain_index_surf==bl)
                 for es in range(len(self.elem_surf[indx])):
-                    con = self.elem_surf[indx[es],:]
+                    con = self.elem_surf[indx[es],:][0]
                     coord_el = self.nos[con,:]
-                    con = con[0]
+                    
                     Ae = int_tri_impedance_10(coord_el, npg)
                     self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
                 i += 1

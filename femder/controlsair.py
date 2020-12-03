@@ -17,7 +17,7 @@ class AirProperties():
         # config = load_cfg(config_file)
         # self.c0 = np.array(c0, dtype = np.float32)
         # self.rho0 = np.array(rho0, dtype = np.float32)
-        self.c0 = np.array(c0,dtype=complex)
+        self.c0 = np.array(c0)
         self.rho0 = np.array(rho0)
         self.temperature = np.array(temperature, dtype = np.float32)
         self.hr = np.array(humid, dtype = np.float32)
