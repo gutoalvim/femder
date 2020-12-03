@@ -7,12 +7,12 @@ Created on Sat Nov 28 00:30:38 2020
 import femder as fd
 import numpy as np
 
-path_to_geo = "Mshs\\FEM_3D\\cplx_room.geo"
+path_to_geo = "..\\Mshs\\FEM_3D\\cplx_room.geo"
 
 
 
 AP = fd.AirProperties(c0 = 343)
-AC = fd.AlgControls(AP,200,200,1)
+AC = fd.AlgControls(AP,20,200,1)
 
 S = fd.Source("spherical")
 S.coord = np.array([[-1,2.25,1.2],[1,2.25,1.2]])
@@ -24,7 +24,7 @@ BC = fd.BC(AC,AP)
 BC.normalized_admittance(2,0.02)
 BC.rigid(3)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=6,scale=1)
 
 
@@ -46,3 +46,10 @@ import matplotlib.pyplot as plt
 pp = np.genfromtxt('../3d_valid_Z_refine.txt')
 plt.semilogx(AC.freq,pp[:,1],label='Validation',linewidth = 5,alpha=0.5)
 plt.legend()
+#%%
+
+fn = obj.eigenfrequency(56)
+
+
+#%%
+a = obj.F_n

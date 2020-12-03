@@ -33,6 +33,20 @@ def find_no(nos,coord=[0,0,0]):
     return indx
 
 @jit
+def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
+    H = H_zero
+    Q = Q_zero
+    for e in tqdm(range(NumElemC)):
+        con = elem_vol[e,:]
+        coord_el = nos[con,:]
+    
+        He, Qe = int_tetra_4gauss(coord_el,c0,rho0)   
+        
+        H[con[:,np.newaxis],con] = H[con[:,np.newaxis],con] + He
+        Q[con[:,np.newaxis],con] = Q[con[:,np.newaxis],con] + Qe
+    return H,Q
+            
+@jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
     He = np.zeros([4,4])
@@ -74,8 +88,8 @@ def int_tetra_4gauss(coord_el,c0,rho0):
     
 # if npg == 1:
     #Pontos de Gauss para um tetraedro
-    a = 0.5854101966249685
-    b = 0.1381966011250105
+    a = 0.5854101966249685#(5-np.sqrt(5))/20 
+    b = 0.1381966011250105 #(5-3*np.sqrt(5))/20 #
     ptx = np.array([a,b,b,a])
     pty = np.array([b,a,b,b])
     ptz = np.array([b,b,a,b])
@@ -206,7 +220,7 @@ class FEM3D:
         self.number_ID_vol = Grid.number_ID_vol
         self.NumNosC = Grid.NumNosC
         self.NumElemC = Grid.NumElemC
-        self.npg = 1
+        self.npg = 4
         
     def compute(self,timeit=True):
         then = time.time()
@@ -283,8 +297,59 @@ class FEM3D:
                 print(f'Time taken: {self.t/60} min')
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
+    
+    def eigenfrequency(self,neigs=12,near_freq=None,timeit=True):
+        self.neigs = neigs
+        self.near = near_freq
+        
+        from numpy.linalg import inv
+        # from scipy.sparse.linalg import eigsh
+        from scipy.sparse.linalg import eigs
+        # from numpy.linalg import inv
+        
+        then = time.time()
+        self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
+        self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
+
+        #Assemble H(Massa) and Q(Rigidez) matrix
+        # print('Assembling Matrix')
+        # for e in tqdm(range(self.NumElemC)):
+        #     con = self.elem_vol[e,:]
+        #     coord_el = self.nos[con,:]
+        #     if self.npg == 1:
+        #         He, Qe = int_tetra_simpl(coord_el,self.c0,self.rho0,self.npg)   
+        #     elif self.npg == 4:
+        #         He, Qe = int_tetra_4gauss(coord_el,self.c0,self.rho0)   
+            
+        #     self.H[con[:,np.newaxis],con] = self.H[con[:,np.newaxis],con] + He
+        #     self.Q[con[:,np.newaxis],con] = self.Q[con[:,np.newaxis],con] + Qe
+        
+        self.H,self.Q = assemble_Q_H_4(self.H,self.Q,self.NumElemC,self.elem_vol,self.nos,self.c0,self.rho0)
+            
+        G = inv(self.Q)@(self.H)
+        if self.near != None:
+            [wc,Vc] = eigs(G,self.neigs,sigma = 2*np.pi*(self.near**2),which='SM')
+        else:
+            [wc,Vc] = eigs(G,self.neigs,which='SM')
+        
+        k = np.sort(np.sqrt(wc))
+        # indk = np.argsort(wc)
+        
+        self.F_n = k/(2*np.pi)
+        
+        
+        self.t = time.time()-then       
+        if timeit:
+            if self.t <= 60:
+                print(f'Time taken: {self.t} s')
+            elif 60 < self.t < 3600:
+                print(f'Time taken: {self.t/60} min')
+            elif self.t >= 3600:
+                print(f'Time taken: {self.t/60} min')
                 
+        return self.F_n
     def evaluate(self,R,plot=False):
+        
         self.R = R
 
         self.pR = np.ones([len(self.freq),len(R.coord)],dtype = np.complex128)
@@ -302,7 +367,7 @@ class FEM3D:
             plt.legend()
             plt.xlabel('Frequency[Hz]')
             plt.ylabel('SPL [dB]')
-            plt.show()
+            # plt.show()
         else:
             for i in range(len(self.R.coord)):
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]

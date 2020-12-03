@@ -54,7 +54,7 @@ class GridImport():
         os.remove(path_name+'/current_mesh.msh')
         
 class GridImport3D:
-    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1):
+    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1):
         
         self.R = R
         self.S = S
@@ -78,7 +78,7 @@ class GridImport3D:
             # dT = gmsh.model.getEntities()
             # gmsh.model.occ.dilate(dT,0,0,0,1/scale,1/scale,1/scale)
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
-            gmsh.option.setNumber("Mesh.MeshSizeMin", 0.5*(self.c0*self.scale)/self.fmax/self.num_freq)
+            gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.scale)/self.fmax/self.num_freq)
             
     
             lc = 0#(self.c0*self.scale)/self.fmax/self.num_freq
@@ -99,13 +99,14 @@ class GridImport3D:
 
             # gmsh.model.mesh.embed(0, [15000], 3, tg[0][1])
             gmsh.model.mesh.generate(3)
-            gmsh.model.mesh.setOrder(1)
+            gmsh.model.mesh.setOrder(order)
+            
             
             # gmsh.model.mesh.optimize()
             gmsh.model.occ.synchronize()
             
             
-            gmsh.fltk.run()
+            # gmsh.fltk.run()
             path_name = os.path.dirname(self.path_to_geo)
             
             gmsh.write(path_name+'/current_mesh.msh')   
@@ -119,12 +120,20 @@ class GridImport3D:
         # os.remove(path_name+'/current_mesh.msh')
         self.nos = msh.points/scale
         
-        self.elem_surf = msh.cells_dict["triangle"]
-        self.elem_vol = msh.cells_dict["tetra"]
-        
-        self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
-        self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
-        
+        if order == 1:
+            self.elem_surf = msh.cells_dict["triangle"]
+            self.elem_vol = msh.cells_dict["tetra"]
+            
+            self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
+            self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
+        elif order == 2:
+            self.elem_surf = msh.cells_dict["triangle6"]
+            self.elem_vol = msh.cells_dict["tetra10"]
+            
+            self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle6"]
+            self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra10"]
+            
+
         self.number_ID_faces = np.unique(self.domain_index_surf)
         self.number_ID_vol = np.unique(self.domain_index_vol)
         
