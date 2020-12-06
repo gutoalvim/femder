@@ -17,7 +17,25 @@ class Source():
         self.coord = np.reshape(np.array(coord, dtype = np.float32), (1,3))
         self.q = np.array([q], dtype = np.float32)
         self.wavetype = wavetype
-
+    
+    def sym_pair(self, coord,axis='y'):
+        if isinstance != (np.ndarray):
+            coord = np.array(coord)
+            coord_sym = coord
+            
+        if axis == 'x':
+            
+            coord_sym[0] = -coord_sym[0]
+        if axis == 'y':
+            
+            coord_sym[1] = -coord_sym[1]
+        if axis == 'z':
+            
+            coord_sym[2] = -coord_sym[2]
+                                    
+        self.coord =  np.append([self.coord,coord_sym],axis=1)
+        # self.coord[
+        
     def set_arc_sources(self, radius = 1.0, ns = 10, angle_span = (-90, 90), random = False):
         '''
         This method is used to generate an array of sound sources in an 2D arc

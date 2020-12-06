@@ -81,14 +81,13 @@ class BC():
         None.
 
         """
-        
         if type(normalized_admittance) == int or float:
             self.mu[domain_index] = np.ones_like(self.AC.freq)*normalized_admittance/(self.AP.c0*self.AP.rho0)
         
-        else:
+        # elif isinstance(normalized_admittance, np.ndarray):
             
-            for i in domain_index:
-                self.mu[i] = np.array(normalized_admittance[:,i]/(self.AP.c0*self.AP.rho0))
+        #     # for i in domain_index:
+        #     self.mu[domain_index] = np.array(normalized_admittance[:])/(self.AP.c0*self.AP.rho0)
 
             
     def velocity(self,domain_index, velocity):

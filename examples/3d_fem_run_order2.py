@@ -7,7 +7,7 @@ Created on Sat Nov 28 00:30:38 2020
 import femder as fd
 import numpy as np
 
-path_to_geo = "Mshs\\FEM_3D\\cplx_room.geo"
+path_to_geo = "..\\Mshs\\FEM_3D\\cplx_room.geo"
 
 
 

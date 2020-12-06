@@ -6,14 +6,72 @@ Created on Sat Nov 28 23:33:54 2020
 """
 import numpy as np
 from scipy.sparse.linalg import spsolve
+# from pypardiso import spsolve
+# from scipy.sparse.linalg import gmres
 import time 
 from tqdm import tqdm
 import warnings
 from numba import jit
-from numba import njit
+import cloudpickle
+# from numba import njit
+from scipy.sparse import coo_matrix
+from scipy.sparse import csc_matrix
 
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
+
+def fem_load(filename,ext='.pickle'):
+    
+        import pickle
+        
+        infile = open(filename + ext, 'rb')
+        simulation_data = pickle.load(infile)
+        # simulation_data = ['simulation_data']
+        infile.close()
+        # Loading simulation data
+
+        AP = simulation_data['AP']
+        AC = simulation_data['AC']
+        S = simulation_data["S"]
+        R = simulation_data["R"]
+        Grid = simulation_data['grid']
+        # self.set_status = True
+        BC = simulation_data["BC"]
+
+
+        obj = FEM3D(Grid=None,AC=AC,AP=AP,S=S,R=R,BC=BC)
+        obj.freq = AC.freq
+        obj.w = AC.w
+        obj.AC = AC
+        obj.AP = AP
+        ##AlgControls
+        obj.c0 = AP.c0
+        obj.rho0 = AP.rho0
+        
+        obj.S = S
+        #%Mesh
+        obj.grid = Grid
+        obj.nos = Grid['nos']
+        obj.elem_surf = Grid['elem_surf']
+        obj.elem_vol =  Grid['elem_vol']
+        obj.domain_index_surf =  Grid['domain_index_surf']
+        obj.domain_index_vol =Grid['domain_index_vol']
+        obj.number_ID_faces =Grid['number_ID_faces']
+        obj.number_ID_vol = Grid['number_ID_vol']
+        obj.NumNosC = Grid['NumNosC']
+        obj.NumElemC = Grid['NumElemC']
+        
+        obj.pR = simulation_data['pR']
+        obj.pN = simulation_data['pN']
+        obj.F_n = simulation_data['F_n']
+        obj.Vc = simulation_data['Vc']
+        obj.H = simulation_data['H']
+        obj.Q = simulation_data['Q']
+        obj.A = simulation_data['A']
+        obj.q = simulation_data['q']
+        print('FEM loaded successfully.')
+        return obj
+
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -51,19 +109,42 @@ def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
     return H,Q
 
 @jit
-def fast_assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
-    H = H_zero
-    Q = Q_zero
+def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
+
+    Hez = np.zeros([4,4,NumElemC])
+    Qez = np.zeros([4,4,NumElemC])
     for e in tqdm(range(NumElemC)):
         con = elem_vol[e,:]
         coord_el = nos[con,:]
-    
-        He, Qe = int_tetra_4gauss(coord_el,c0,rho0)   
         
-        H[con[:,np.newaxis],con] = H[con[:,np.newaxis],con] + He
-        Q[con[:,np.newaxis],con] = Q[con[:,np.newaxis],con] + Qe
+        He, Qe = int_tetra_4gauss(coord_el,c0,rho0)    
+        Hez[:,:,e] = He
+        Qez[:,:,e] = Qe
+    
+    NLB=np.size(Hez,1)
+    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
+    X = np.transpose(Y, (1, 0, 2))
+    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    H = H.tocsc()
+    Q = Q.tocsc()
     return H,Q
-              
+@jit
+def assemble_A_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_surf,nos,c0,rho0):
+    
+    Aa = []
+    for bl in number_ID_faces:
+        indx = np.argwhere(domain_index_surf==bl)
+        A = np.zeros([NumNosC,NumNosC])
+        for es in range(len(elem_surf[indx])):
+            con = elem_surf[indx[es],:][0]
+            coord_el = nos[con,:]
+            Ae = int_tri_impedance_simpl(coord_el,3)
+            A[con[:,np.newaxis],con] = A[con[:,np.newaxis],con] + Ae
+        Aa.append(csc_matrix(A))
+  
+       
+    return Aa
 @jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):
 
@@ -132,17 +213,44 @@ def int_tetra_4gauss(coord_el,c0,rho0):
                 
                 Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
 
-                # B = spsolve(Ja,GNi)
-                # print(B.shape)              
-                
-                # print(np.matmul(Ni,np.transpose(Ni)).shape)
                 argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
                 
                 He = He + wtx*wty*wtz*argHe1   
                 Qe = Qe + wtx*wty*wtz*argQe1 
     
     return He,Qe
+@jit
+def int_tri_impedance_1gauss(coord_el):
 
+
+    Ae = np.zeros([3,3])
+    xe = np.array(coord_el[:,0])
+    ye = np.array(coord_el[:,1])
+    ze = np.array(coord_el[:,2])
+    #Formula de Heron - Area do Triangulo
+    
+    a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
+    b = np.sqrt((xe[1]-xe[2])**2+(ye[1]-ye[2])**2+(ze[1]-ze[2])**2)
+    c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
+    p = (a+b+c)/2
+    area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
+    
+    # if npg == 1:
+    # #Pontos de Gauss para um tetraedro
+    qsi1 = 1/3
+    qsi2 = 1/3
+    wtz= 1#/6 * 6 # Pesos de Gauss
+
+      
+    Ni = np.array([[qsi1],[qsi2],[1-qsi1-qsi2]])
+    
+        
+    detJa= area_elm
+    argAe1 = Ni@np.transpose(Ni)*detJa
+    
+    Ae = Ae + wtz*wtz*argAe1
+    
+    return Ae
 @jit
 def int_tri_impedance_simpl(coord_el,npg):
 
@@ -178,10 +286,10 @@ def int_tri_impedance_simpl(coord_el,npg):
     pty = np.array([aa,bb,aa])
     wtz= np.array([1/6,1/6,1/6])*2 # Pesos de Gauss
 
-    for indx in range(npg):
+    for indx in range(3):
         qsi1 = ptx[indx]
         wtx =  wtz[indx]
-        for indx in range(npg):
+        for indx in range(3):
             qsi2 = pty[indx]
             wty =  wtz[indx]
             
@@ -206,7 +314,7 @@ def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     ps = spsolve(G,b)
     return ps
 class FEM3D:
-    def __init__(self,Grid,S,AP,AC,BC=None):
+    def __init__(self,Grid,S,R,AP,AC,BC=None):
         """
         
 
@@ -232,65 +340,76 @@ class FEM3D:
         #AirProperties
         self.freq = AC.freq
         self.w = AC.w
-        
+        self.AC = AC
+        self.AP = AP
         ##AlgControls
         self.c0 = AP.c0
         self.rho0 = AP.rho0
         
         self.S = S
+        self.R = R
         #%Mesh
-        self.grid = Grid
-        self.nos = Grid.nos
-        self.elem_surf = Grid.elem_surf
-        self.elem_vol =  Grid.elem_vol
-        self.domain_index_surf =  Grid.domain_index_surf
-        self.domain_index_vol =Grid.domain_index_vol
-        self.number_ID_faces =Grid.number_ID_faces
-        self.number_ID_vol = Grid.number_ID_vol
-        self.NumNosC = Grid.NumNosC
-        self.NumElemC = Grid.NumElemC
+        if Grid != None:
+            self.grid = Grid
+            self.nos = Grid.nos
+            self.elem_surf = Grid.elem_surf
+            self.elem_vol =  Grid.elem_vol
+            self.domain_index_surf =  Grid.domain_index_surf
+            self.domain_index_vol =Grid.domain_index_vol
+            self.number_ID_faces =Grid.number_ID_faces
+            self.number_ID_vol = Grid.number_ID_vol
+            self.NumNosC = Grid.NumNosC
+            self.NumElemC = Grid.NumElemC
+            
         self.npg = 4
+        self.pR = None
+        self.pN = None
+        self.F_n = None
+        self.Vc = None
         
     def compute(self,timeit=True):
         then = time.time()
         if isinstance(self.c0, complex) or isinstance(self.rho0, complex):
-            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
-            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
+            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
 
         else:
-            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
-            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.complex128)
-        self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype = np.complex128)
-        self.q = np.zeros([self.NumNosC,1],dtype = np.complex128)
+            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+        # self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype =  np.cfloat)
+        self.q = np.zeros([self.NumNosC,1],dtype = np.cfloat)
         
 
-        self.H,self.Q = assemble_Q_H_4(self.H,self.Q,self.NumElemC,self.elem_vol,self.nos,self.c0,self.rho0)
+        self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
                     
         #Assemble A(Amortecimento)
-        npg = 3
         if self.BC != None:
-            i = 0
-            for bl in self.number_ID_faces:
-                indx = np.argwhere(self.domain_index_surf==bl)
-                for es in range(len(self.elem_surf[indx])):
-                    con = self.elem_surf[indx[es],:][0]
-                    coord_el = self.nos[con,:]
-                    Ae = int_tri_impedance_simpl(coord_el, npg)
-                    self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
-                i += 1
-            
+        #     i = 0
+        #     for bl in self.number_ID_faces:
+        #         indx = np.argwhere(self.domain_index_surf==bl)
+        #         for es in range(len(self.elem_surf[indx])):
+        #             con = self.elem_surf[indx[es],:][0]
+        #             coord_el = self.nos[con,:]
+        #             Ae = int_tri_impedance_simpl(coord_el,npg)
+        #             self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
+        #         i += 1
+          
+            self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
             
             pN = []
             
             # print('Solving System')
             for ii in range(len(self.S.coord)):
                 self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                
+            self.q = csc_matrix(self.q)
             for N in tqdm(range(len(self.freq))):
                 # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
-                Ag = np.zeros_like(self.Q,dtype=np.complex128)
+                # Ag = np.zeros_like(self.Q,dtype=np.cfloat)
                 i = 0
+                Ag = 0
                 for bl in self.number_ID_faces:
-                    Ag += self.A[:,:,i]*self.mu[bl][N]#/(self.rho0*self.c0)
+                    Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
                     i+=1
                 G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
                 b = -1j*self.w[N]*self.q
@@ -325,18 +444,18 @@ class FEM3D:
         self.neigs = neigs
         self.near = near_freq
         
-        from numpy.linalg import inv
+        # from numpy.linalg import inv
         # from scipy.sparse.linalg import eigsh
-        from scipy.sparse.linalg import eigs
+        from scipy.sparse.linalg import eigs,inv
         # from numpy.linalg import inv
         
         then = time.time()
         self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
         self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
 
-        self.H,self.Q = assemble_Q_H_4(self.H,self.Q,self.NumElemC,self.elem_vol,self.nos,self.c0,self.rho0)
+        self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
             
-        G = inv(self.Q)@(self.H)
+        G = inv(self.Q)*(self.H)
         if self.near != None:
             [wc,Vc] = eigs(G,self.neigs,sigma = 2*np.pi*(self.near**2),which='SM')
         else:
@@ -399,7 +518,7 @@ class FEM3D:
                 for es in range(len(self.elem_surf[indx])):
                     con = self.elem_surf[indx[es],:][0]
                     coord_el = self.nos[con,:]
-                    Ae = int_tri_impedance_simpl(coord_el, npg)
+                    Ae = int_tri_impedance_simpl(coord_el,npg)
                     self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
                 i += 1
         
@@ -418,6 +537,7 @@ class FEM3D:
             Ga = inv(self.Q)@(HA)
             [wcc,Vcc] = eigs(Ga,neigs,which='SM')
             fnc = np.sqrt(wcc)/(2*np.pi)
+            print(fnc)
             indfn = find_nearest(np.real(fnc), fn[icc])
             fcn[icc] = fnc[indfn]
         self.F_n = fcn
@@ -489,7 +609,7 @@ class FEM3D:
         import plotly.graph_objs as go
         
         fi = find_nearest((np.real(self.F_n)),freq)
-        print(fi)
+        # print(fi)
         unq = np.unique(self.elem_surf)
         uind = np.arange(np.amin(unq),np.amax(unq)+1,1)
         
@@ -615,3 +735,41 @@ class FEM3D:
         import plotly.io as pio
         pio.renderers.default = renderer
         fig.show()
+        
+    def fem_save(self, filename=time.strftime("%Y%m%d-%H%M%S"), ext = ".pickle"):
+        # Simulation data
+        gridpack = {'nos': self.nos,
+                'elem_vol': self.elem_vol,
+                'elem_surf': self.elem_surf,
+                'NumNosC': self.NumNosC,
+                'NumElemC': self.NumElemC,
+                'domain_index_surf': self.domain_index_surf,
+                'domain_index_vol': self.domain_index_vol,
+                'number_ID_faces': self.number_ID_faces,
+                'number_ID_vol': self.number_ID_vol}
+
+    
+        
+            
+        simulation_data = {'AC': self.AC,
+                           "AP": self.AP,
+                           'R': self.R,
+                           'S': self.S,
+                           'BC': self.BC,
+                           'A': self.A,
+                           'H': self.H,
+                           'Q': self.Q,
+                           'q':self.q,
+                           'grid': gridpack,
+                           'pN': self.pN,
+                           'pR':self.pR,
+                           'F_n': self.F_n,
+                           'Vc':self.Vc}
+                           # 'incident_traces': incident_traces}
+
+                
+        outfile = open(filename + ext, 'wb')
+                
+        cloudpickle.dump(simulation_data, outfile)
+        outfile.close()
+        print('FEM saved successfully.')

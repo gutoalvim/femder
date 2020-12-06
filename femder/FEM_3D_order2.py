@@ -65,6 +65,39 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     Qe = Qe + wtz*wtz*wtz*argQe1 
     
     return He,Qe
+
+@jit
+def int_tetra_10N(coord_el,c0,rho0):
+
+    He = np.zeros([10,10])
+    Qe = np.zeros([10,10])
+    
+# if npg == 1:
+    #Pontos de Gauss para um tetraedro
+    ptx = 1/4 
+    pty = 1/4
+    ptz = 1/4
+    wtz= 1#/6 * 6 # Pesos de Gauss
+    qsi = [ptx,pty,ptz]
+    
+    Ni = Tetrahedron10N(qsi)
+    
+    GNi = Tetrahedron10deltaN(qsi)
+
+    Ja = (GNi@coord_el)
+    detJa = (1/6) * np.linalg.det(Ja)
+    # print(detJa)
+    B = (np.linalg.inv(Ja)@GNi)
+    # B = spsolve(Ja,GNi)
+    # print(B.shape)              
+    argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
+    # print(np.matmul(Ni,np.transpose(Ni)).shape)
+    argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+    
+    He = He + wtz*wtz*wtz*argHe1   
+    Qe = Qe + wtz*wtz*wtz*argQe1 
+    
+    return He,Qe
 @jit
 def Tetrahedron10N(qsi):
 
@@ -351,11 +384,11 @@ class FEM3D:
         #Assemble H(Massa) and Q(Rigidez) matrix
         # print('Assembling Matrix')
         for e in tqdm(range(self.NumElemC)):
-            con = self.elem_vol[e,:][0]
+            con = self.elem_vol[e,:]
             # print(con)
             coord_el = self.nos[con,:]
 
-            He, Qe = int_tetra10_gauss(coord_el,self.c0,self.rho0)   
+            He, Qe = int_tetra_10N(coord_el,self.c0,self.rho0)   
             
             # print(Qe.shape)
             # print(self.Q[con[:,np.newaxis],con].shape)

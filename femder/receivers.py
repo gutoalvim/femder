@@ -26,7 +26,17 @@ class Receiver():
         going on z>0
         '''
         self.coord = np.reshape(np.array(coord, dtype = np.float32), (1,3))
-
+    
+    def star(self,coord,dx):
+        
+        self.coord = np.array([coord,[coord[0],coord[1],coord[2]+dx],
+                                      [coord[0],coord[1]+dx,coord[2]],
+                                      [coord[0]+dx,coord[1],coord[2]],
+                                      [coord[0],coord[1],coord[2]-dx],
+                                      [coord[0],coord[1]-dx,coord[2]],
+                                      [coord[0]-dx,coord[1],coord[2]]])
+                                      
+                                      
     def double_rec(self, z_dist = 0.01):
         '''
         This method initializes a double receiver separated by z_dist. It will overwrite
