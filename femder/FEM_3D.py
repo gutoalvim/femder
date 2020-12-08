@@ -60,6 +60,7 @@ def fem_load(filename,ext='.pickle'):
         obj.number_ID_vol = Grid['number_ID_vol']
         obj.NumNosC = Grid['NumNosC']
         obj.NumElemC = Grid['NumElemC']
+        obj.order = Grid["order"]
         
         obj.pR = simulation_data['pR']
         obj.pN = simulation_data['pN']
@@ -81,6 +82,31 @@ def find_nearest(array, value):
 def p2SPL(p):
     SPL = 10*np.log10(0.5*p*np.conj(p)/(2e-5)**2)
     return SPL
+
+@jit
+def Tetrahedron10N(qsi):
+
+    t1 = qsi[0]
+    t2 = qsi[1]
+    t3 = qsi[2]
+    t4 = 1 - qsi[0] - qsi[1] - qsi[2];
+    # print(t1)
+    N = np.array([t4*(2*t4 - 1),t1*(2*t1 - 1),t2*(2*t2 - 1),t3*(2*t3 - 1),
+                  4*t1*t4,4*t1*t2,4*t2*t4,4*t3*t4,4*t2*t3,4*t3*t1]);
+    return N[:,np.newaxis]
+
+
+@jit
+def Tetrahedron10deltaN(qsi):
+    t1 = 4*qsi[0]
+    t2 = 4*qsi[1]
+    t3 = 4*qsi[2]
+    # print(t1)
+    deltaN = np.array([[t1 + t2 + t3 - 3,t1 + t2 + t3 - 3,t1 + t2 + t3 - 3],[t1 - 1,0,0],[0,t2 - 1,0],[0,0,t3 - 1],
+                        [4 - t2 - t3 - 2*t1,-t1,-t1],[t2,t1,0],[-t2,4 - 2*t2 - t3 - t1,-t2],
+                        [-t3,-t3,4 - t2 - 2*t3 - t1],[0,t3,t2],[t3,0,t1]])
+    
+    return deltaN.T
 def find_no(nos,coord=[0,0,0]):
     gpts = nos
     coord = np.array(coord)
@@ -118,6 +144,28 @@ def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
         coord_el = nos[con,:]
         
         He, Qe = int_tetra_4gauss(coord_el,c0,rho0)    
+        Hez[:,:,e] = He
+        Qez[:,:,e] = Qe
+    
+    NLB=np.size(Hez,1)
+    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
+    X = np.transpose(Y, (1, 0, 2))
+    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    H = H.tocsc()
+    Q = Q.tocsc()
+    return H,Q
+
+@jit
+def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
+
+    Hez = np.zeros([10,10,NumElemC])
+    Qez = np.zeros([10,10,NumElemC])
+    for e in tqdm(range(NumElemC)):
+        con = elem_vol[e,:]
+        coord_el = nos[con,:]
+        
+        He, Qe = int_tetra10_4gauss(coord_el,c0,rho0)    
         Hez[:,:,e] = He
         Qez[:,:,e] = Qe
     
@@ -219,6 +267,39 @@ def int_tetra_4gauss(coord_el,c0,rho0):
                 Qe = Qe + wtx*wty*wtz*argQe1 
     
     return He,Qe
+
+@jit
+def int_tetra10_4gauss(coord_el,c0,rho0):
+    
+    He = np.zeros([10,10])
+    Qe = np.zeros([10,10])
+    
+# if npg == 1:
+    #Pontos de Gauss para um tetraedro
+    a = 0.5854101966249685
+    b = 0.1381966011250105
+    ptx = [a,b,b,b]
+    pty = [b,a,b,b]
+    ptz = [b,b,a,b]
+    
+    weigths = 1/24#**(1/3)
+
+    qsi = np.zeros([3,1]).ravel()
+    for indx in range(4):
+        qsi[0] = ptx[indx]
+        qsi[1]= pty[indx]
+        qsi[2] = ptz[indx]
+        Ni = Tetrahedron10N(qsi)
+        GNi = Tetrahedron10deltaN(qsi)
+        Ja = (GNi@coord_el)
+        detJa = ((np.linalg.det(Ja)))
+        B = (np.linalg.inv(Ja)@GNi)
+        argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
+        argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+        He = He + weigths*argHe1   
+        Qe = Qe + weigths*argQe1
+    
+    return He,Qe
 @jit
 def int_tri_impedance_1gauss(coord_el):
 
@@ -266,18 +347,6 @@ def int_tri_impedance_simpl(coord_el,npg):
     c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
     p = (a+b+c)/2
     area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
-    
-    # if npg == 1:
-    # #Pontos de Gauss para um tetraedro
-    #     ptx = 1/3
-    #     pty = 1/3
-    #     wtz= 1#/6 * 6 # Pesos de Gauss
-    #     qsi1 = ptx
-    #     qsi2 = pty
-    #     wtx = wtz
-    #     wty = wtz
-        
-        
     # if npg == 3:
     #Pontos de Gauss para um tetraedro
     aa = 1/6
@@ -360,6 +429,7 @@ class FEM3D:
             self.number_ID_vol = Grid.number_ID_vol
             self.NumNosC = Grid.NumNosC
             self.NumElemC = Grid.NumElemC
+            self.order = Grid.order
             
         self.npg = 4
         self.pR = None
@@ -379,9 +449,10 @@ class FEM3D:
         # self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype =  np.cfloat)
         self.q = np.zeros([self.NumNosC,1],dtype = np.cfloat)
         
-
-        self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
-                    
+        if self.order == 1:
+            self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+        elif self.order == 2:
+            self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
         #Assemble A(Amortecimento)
         if self.BC != None:
         #     i = 0
@@ -746,7 +817,8 @@ class FEM3D:
                 'domain_index_surf': self.domain_index_surf,
                 'domain_index_vol': self.domain_index_vol,
                 'number_ID_faces': self.number_ID_faces,
-                'number_ID_vol': self.number_ID_vol}
+                'number_ID_vol': self.number_ID_vol,
+                'order': self.order}
 
     
         
