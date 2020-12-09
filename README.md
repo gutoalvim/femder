@@ -3,7 +3,7 @@ A Finite Element Method (FEM) code for acoustics written for my undergraduate cl
 
 # dependencies
 
-pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
+numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
 
 # How to Install on Windows
 
