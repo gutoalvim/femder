@@ -9,7 +9,7 @@ numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
 
 # 1) Download Miniconda 3 for your system. https://docs.conda.io/en/latest/miniconda.html
 
-# 2) In Anaconda Prompt create a new env -
+# 2) In Anaconda Prompt create a new env:
 
 $conda create -n myenv python=3.6
 
@@ -17,7 +17,7 @@ $conda activate myenv
 
 Python 3.6 is HIGHLY reccomended, so you can make use of scikit-umfpack to accelerate computations, please use it, you will not regret it.
 
-# 3) Install all packages
+# 3) Install all dependencies:
 
 $conda install git
 
@@ -25,7 +25,7 @@ $pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
 
 $pip install scikit-umfpack==0.3.1
 
-# 4) Install Femder
+# 4) Install Femder:
 
 $ git clone https://github.com/gutoalvim/femder.git
 
