@@ -144,7 +144,6 @@ def find_no(nos,coord=[0,0,0]):
     # print(min(no_ind))
     return indx
 
-@jit
 def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
     H = H_zero
     Q = Q_zero
@@ -158,7 +157,6 @@ def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
         Q[con[:,np.newaxis],con] = Q[con[:,np.newaxis],con] + Qe
     return H,Q
 
-@jit
 def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
     Hez = np.zeros([4,4,NumElemC])
@@ -180,7 +178,6 @@ def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     Q = Q.tocsc()
     return H,Q
 
-@jit
 def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
     Hez = np.zeros([10,10,NumElemC])
@@ -201,7 +198,7 @@ def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     H = H.tocsc()
     Q = Q.tocsc()
     return H,Q
-@jit
+
 def assemble_A_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_surf,nos,c0,rho0):
     
     Aa = []
@@ -217,6 +214,7 @@ def assemble_A_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_su
   
        
     return Aa
+
 def assemble_A10_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_surf,nos,c0,rho0):
     
     Aa = []
@@ -267,6 +265,46 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
     return He,Qe
 
 # @jit
+# def int_tetra_4gauss(coord_el,c0,rho0):
+
+#     He = np.zeros([4,4])
+#     Qe = np.zeros([4,4])
+    
+# # if npg == 1:
+#     #Pontos de Gauss para um tetraedro
+#     a = 0.5854101966249685#(5-np.sqrt(5))/20 
+#     b = 0.1381966011250105 #(5-3*np.sqrt(5))/20 #
+#     ptx = np.array([a,b,b,a])
+#     pty = np.array([b,a,b,b])
+#     ptz = np.array([b,b,a,b])
+    
+#     weigths = np.array([1/24,1/24,1/24,1/24])*6
+    
+#     ## argHe1 is independent of qsi's, therefore it can be pre computed
+#     GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
+#     Ja = (GNi@coord_el)
+#     detJa = (1/6) * np.linalg.det(Ja)
+#     B = (np.linalg.inv(Ja)@GNi)
+#     argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
+#     for indx in range(4):
+#         qsi1 = ptx[indx]
+#         wtx =  weigths[indx]
+#         for indy in range(4):
+#             qsi2 = pty[indy]
+#             wty =  weigths[indx]
+#             for indz in range(4):
+#                 qsi3 = ptz[indz]
+#                 wtz =  weigths[indx]
+                
+#                 Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
+
+#                 argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+                
+#                 He = He + wtx*wty*wtz*argHe1   
+#                 Qe = Qe + wtx*wty*wtz*argQe1 
+    
+#     return He,Qe
+@jit
 def int_tetra_4gauss(coord_el,c0,rho0):
 
     He = np.zeros([4,4])
@@ -276,34 +314,30 @@ def int_tetra_4gauss(coord_el,c0,rho0):
     #Pontos de Gauss para um tetraedro
     a = 0.5854101966249685#(5-np.sqrt(5))/20 
     b = 0.1381966011250105 #(5-3*np.sqrt(5))/20 #
-    ptx = np.array([a,b,b,a])
+    ptx = np.array([a,b,b,b])
     pty = np.array([b,a,b,b])
     ptz = np.array([b,b,a,b])
-    
-    weigths = np.array([1/24,1/24,1/24,1/24])*6
     
     ## argHe1 is independent of qsi's, therefore it can be pre computed
     GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
     Ja = (GNi@coord_el)
-    detJa = (1/6) * np.linalg.det(Ja)
+    detJa =  np.linalg.det(Ja)
     B = (np.linalg.inv(Ja)@GNi)
     argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
-    for indx in range(4):
-        qsi1 = ptx[indx]
-        wtx =  weigths[indx]
-        for indy in range(4):
-            qsi2 = pty[indy]
-            wty =  weigths[indx]
-            for indz in range(4):
-                qsi3 = ptz[indz]
-                wtz =  weigths[indx]
-                
-                Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
+    weigths = 1/24#**(1/3)
 
-                argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+    qsi = np.zeros([3,1]).ravel()
+    for indx in range(4):
+        qsi[0] = ptx[indx]
+        qsi[1]= pty[indx]
+        qsi[2] = ptz[indx]
                 
-                He = He + wtx*wty*wtz*argHe1   
-                Qe = Qe + wtx*wty*wtz*argQe1 
+        Ni = np.array([[1-qsi[0]-qsi[1]-qsi[2]],[qsi[0]],[qsi[1]],[qsi[2]]])
+
+        argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+        
+        He = He + weigths*argHe1   
+        Qe = Qe + weigths*argQe1 
     
     return He,Qe
 
