@@ -5,7 +5,7 @@ A Finite Element Method (FEM) code for acoustics written for my undergraduate cl
 
 pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
 
-# How to Install (suggestion)
+# How to Install on Windows
 
 # 1) Download Miniconda 3 for your system. https://docs.conda.io/en/latest/miniconda.html
 
