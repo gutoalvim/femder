@@ -1,5 +1,5 @@
 # femder
-A Finite Element Method (FEM) code for acoustics written for my undergraduate class "Métodos Numéricos em Acústica e Vibrações" by Dr. Paulo Mareze
+A Finite Element Method (FEM) code for acoustics written for my undergraduate class "Métodos Numéricos em Acústica e Vibrações", lectured by Dr. Paulo Mareze
 
 # dependencies
 
@@ -38,7 +38,7 @@ pip install jupyter-notebook
 # ---------
 Have fun doing acoustics, if you have any thoughts, issues, suggestions, let me know here on Git or send me an email (luiz.alvim@eac.ufsm.br)
 
-Speacial thanks to my teacher Dr. Paulo Mareze and my fried Alexandre Piccini for guiding me to the FEM mountains.
+Special thanks to my teacher Dr. Paulo Mareze and my fried Alexandre Piccini for guiding me to the FEM mountains.
 
 I would also like to thank my great friend Rinaldi Petrolli.
 
