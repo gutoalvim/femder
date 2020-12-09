@@ -18,13 +18,17 @@ Python 3.6 is HIGHLY reccomended, so you can make use of scikit-umfpack to accel
 3) Install all packages
 
 $conda install git
+
 $pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
+
 $pip install scikit-umfpack==0.3.1
 
 4) Install Femder
 
 $ git clone https://github.com/gutoalvim/femder.git
+
 $ cd femder
+
 $ python setup.py install
 
 5) Install your IDE of choice, Jupyter Notebook is great to run this package and do your work in a organized fashion.
