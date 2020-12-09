@@ -13,6 +13,8 @@ numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
 
 $conda create -n myenv python=3.6
 
+$conda activate myenv
+
 Python 3.6 is HIGHLY reccomended, so you can make use of scikit-umfpack to accelerate computations, please use it, you will not regret it.
 
 # 3) Install all packages
