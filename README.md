@@ -40,7 +40,7 @@ pip install jupyter-notebook
 # ---------
 Have fun doing acoustics, if you have any thoughts, issues, suggestions, let me know here on Git or send me an email (luiz.alvim@eac.ufsm.br)
 
-Special thanks to my teacher Dr. Paulo Mareze and my fried Alexandre Piccini for guiding me to the FEM mountains.
+Special thanks to my teacher Dr. Paulo Mareze and my friend Alexandre Piccini for guiding me to the FEM mountains.
 
 I would also like to thank my great friend Rinaldi Petrolli.
 
