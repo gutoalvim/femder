@@ -95,7 +95,31 @@ def Tetrahedron10N(qsi):
                   4*t1*t4,4*t1*t2,4*t2*t4,4*t3*t4,4*t2*t3,4*t3*t1]);
     return N[:,np.newaxis]
 
-
+@jit
+def Triangle10N(qsi):
+    
+    N = np.array([(-qsi[0] - qsi[1] + 1) * (2*(-qsi[0] - qsi[1] + 1) - 1),
+    qsi[0]*(2*qsi[0] - 1),
+    qsi[1]*(2*qsi[1] - 1),
+    4*qsi[0]*qsi[1],
+    4*qsi[1]*(-qsi[0] - qsi[1] + 1),
+    4*qsi[0]*(-qsi[0] - qsi[1] + 1)])
+    
+    # deltaN = np.array([[(4*qsi[0] + 4*qsi[1] - 3),
+    # (4*qsi[0] - 1),
+    # 0,
+    # 4*qsi[1],
+    # -4*qsi[1],
+    # (4 - 4*qsi[1] - 8*qsi[0])],
+    # [(4*qsi[0] + 4*qsi[1] - 3),
+    # 0,
+    # (4*qsi[1] - 1),
+    # 4*qsi[0],
+    # 4 - 8*qsi[1] - 4*qsi[0],
+    # -4*qsi[0]]
+    # ]);
+    
+    return N[:,np.newaxis]#,deltaN
 @jit
 def Tetrahedron10deltaN(qsi):
     t1 = 4*qsi[0]
@@ -188,6 +212,21 @@ def assemble_A_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_su
             con = elem_surf[indx[es],:][0]
             coord_el = nos[con,:]
             Ae = int_tri_impedance_simpl(coord_el,3)
+            A[con[:,np.newaxis],con] = A[con[:,np.newaxis],con] + Ae
+        Aa.append(csc_matrix(A))
+  
+       
+    return Aa
+def assemble_A10_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_surf,nos,c0,rho0):
+    
+    Aa = []
+    for bl in number_ID_faces:
+        indx = np.argwhere(domain_index_surf==bl)
+        A = np.zeros([NumNosC,NumNosC])
+        for es in range(len(elem_surf[indx])):
+            con = elem_surf[indx[es],:][0]
+            coord_el = nos[con,:]
+            Ae = int_tri10_3gauss(coord_el)
             A[con[:,np.newaxis],con] = A[con[:,np.newaxis],con] + Ae
         Aa.append(csc_matrix(A))
   
@@ -371,6 +410,47 @@ def int_tri_impedance_simpl(coord_el,npg):
             Ae = Ae + wtx*wty*argAe1
     
     return Ae
+
+@jit
+def int_tri10_3gauss(coord_el):
+
+
+    Ae = np.zeros([6,6])
+    xe = np.array(coord_el[:,0])
+    ye = np.array(coord_el[:,1])
+    ze = np.array(coord_el[:,2])
+    #Formula de Heron - Area do Triangulo
+    
+    a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
+    b = np.sqrt((xe[1]-xe[2])**2+(ye[1]-ye[2])**2+(ze[1]-ze[2])**2)
+    c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
+    p = (a+b+c)/2
+    area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
+    # if npg == 3:
+    #Pontos de Gauss para um triangulo
+    aa = 1/6
+    bb = 2/3
+    ptx = np.array([aa,aa,bb])
+    pty = np.array([aa,bb,aa])
+    # wtz= np.array([1/6,1/6,1/6])#*2 # Pesos de Gauss
+    weight = 1/6*2
+    qsi = np.zeros([2,1]).ravel()
+    for indx in range(3):
+        qsi[0] = ptx[indx]
+        # wtx =  wtz[indx]
+    # for indx in range(3):
+        qsi[1] = pty[indx]
+        # wty =  wtz[indx]
+        
+        Ni = Triangle10N(qsi)
+        
+            
+        detJa= area_elm
+        argAe1 = Ni@np.transpose(Ni)*detJa
+        
+        Ae = Ae + weight*argAe1
+    
+    return Ae
     # def damped_eigen(self,Q,H,A,mu)
 def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     Ag = np.zeros_like(Q,dtype=np.complex128)
@@ -382,6 +462,7 @@ def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     b = -1j*w[N]*q
     ps = spsolve(G,b)
     return ps
+
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
         """
@@ -464,9 +545,10 @@ class FEM3D:
         #             Ae = int_tri_impedance_simpl(coord_el,npg)
         #             self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
         #         i += 1
-          
-            self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
-            
+            if self.order == 1:
+                self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+            elif self.order == 2:
+                self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
             pN = []
             
             # print('Solving System')
@@ -719,7 +801,7 @@ class FEM3D:
         self.pR = np.ones([len(self.freq),len(R.coord)],dtype = np.complex128)
         if plot:
             plt.style.use('seaborn-notebook')
-            plt.figure(figsize=(5*1.62,5))
+            # plt.figure(figsize=(5*1.62,5))
             for i in range(len(self.R.coord)):
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
                 plt.semilogx(self.freq,p2SPL(self.pR[:,i]),label=f'R{i} | {self.R.coord[0]}m')

@@ -33,7 +33,7 @@ BC.mu[3] = (tmm.y)
 
 BC.rigid(2)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=2)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
 
 
@@ -54,7 +54,7 @@ objl = fd.fem_load('test')
 
 #%%
 
-objl.evaluate(R,True)
+obj.evaluate(R,True)
 #%%
 obj.plot_problem(renderer='browser')
 obj.surf_evaluate(freq = 200,renderer = 'browser',d_range = 45)
