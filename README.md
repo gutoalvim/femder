@@ -1,7 +1,7 @@
 # femder
 A Finite Element Method (FEM) code for acoustics written for my undergraduate class "Métodos Numéricos em Acústica e Vibrações", lectured by Dr. Paulo Mareze
 
-# dependencies
+# Dependencies
 
 numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
 
