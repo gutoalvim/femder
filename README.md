@@ -36,7 +36,7 @@ $ python setup.py install
 pip install jupyter-notebook
 
 # ---------
-Have fun doing acoustics, if you have any thoughts, issues, suggestions, let me know here in Git or send me an email (luiz.alvim@eac.ufsm.br)
+Have fun doing acoustics, if you have any thoughts, issues, suggestions, let me know here on Git or send me an email (luiz.alvim@eac.ufsm.br)
 
 Speacial thanks to my teacher Dr. Paulo Mareze and my fried Alexandre Piccini for guiding me to the FEM mountains.
 
