@@ -12,7 +12,7 @@ path_to_geo = "..\\Mshs\\FEM_3D\\cplx_room.geo"
 
 
 AP = fd.AirProperties(c0 = 343)
-AC = fd.AlgControls(AP,20,150,1)
+AC = fd.AlgControls(AP,20,200,1)
 
 S = fd.Source("spherical")
 
@@ -33,7 +33,7 @@ BC.mu[3] = (tmm.y)
 
 BC.rigid(2)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=2)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
 
 
@@ -56,15 +56,18 @@ objl = fd.fem_load('test')
 
 obj.evaluate(R,True)
 #%%
+
 obj.plot_problem(renderer='browser')
-obj.surf_evaluate(freq = 200,renderer = 'browser',d_range = 45)
+obj.surf_evaluate(freq = 49,renderer = 'browser',d_range = 45)
+
+
 #%%
 import matplotlib.pyplot as plt
 pp = np.genfromtxt('../../3d_valid_delany.txt')
 
 plt.semilogx(pp[:,0],pp[:,1],label='Validation',linewidth = 4,alpha=0.9,linestyle=':')
 plt.legend()
-plt.xlim([20,150])
+# plt.xlim([20,150])
 #%%
 
 fn = obj.eigenfrequency(20)

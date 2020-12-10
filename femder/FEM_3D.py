@@ -20,59 +20,92 @@ from scipy.sparse import csc_matrix
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 
+from contextlib import contextmanager
+import sys, os
+
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:  
+            yield
+        finally:
+            sys.stdout = old_stdout
 def fem_load(filename,ext='.pickle'):
+    """
+    Load FEM3D simulation
+
+    Parameters
+    ----------
+    filename : str
+        File name saved with fem_save.
+    ext : TYPE, optional
+        File extension. The default is '.pickle'.
+
+    Returns
+    -------
+    obj : TYPE
+        DESCRIPTION.
+
+    """
     
-        import pickle
-        
-        infile = open(filename + ext, 'rb')
-        simulation_data = pickle.load(infile)
-        # simulation_data = ['simulation_data']
-        infile.close()
-        # Loading simulation data
+    import pickle
+    
+    infile = open(filename + ext, 'rb')
+    simulation_data = pickle.load(infile)
+    # simulation_data = ['simulation_data']
+    infile.close()
+    # Loading simulation data
 
-        AP = simulation_data['AP']
-        AC = simulation_data['AC']
-        S = simulation_data["S"]
-        R = simulation_data["R"]
-        Grid = simulation_data['grid']
-        # self.set_status = True
-        BC = simulation_data["BC"]
+    AP = simulation_data['AP']
+    AC = simulation_data['AC']
+    S = simulation_data["S"]
+    R = simulation_data["R"]
+    Grid = simulation_data['grid']
+    # self.set_status = True
+    BC = simulation_data["BC"]
 
 
-        obj = FEM3D(Grid=None,AC=AC,AP=AP,S=S,R=R,BC=BC)
-        obj.freq = AC.freq
-        obj.w = AC.w
-        obj.AC = AC
-        obj.AP = AP
-        ##AlgControls
-        obj.c0 = AP.c0
-        obj.rho0 = AP.rho0
-        
-        obj.S = S
-        #%Mesh
-        obj.grid = Grid
-        obj.nos = Grid['nos']
-        obj.elem_surf = Grid['elem_surf']
-        obj.elem_vol =  Grid['elem_vol']
-        obj.domain_index_surf =  Grid['domain_index_surf']
-        obj.domain_index_vol =Grid['domain_index_vol']
-        obj.number_ID_faces =Grid['number_ID_faces']
-        obj.number_ID_vol = Grid['number_ID_vol']
-        obj.NumNosC = Grid['NumNosC']
-        obj.NumElemC = Grid['NumElemC']
-        obj.order = Grid["order"]
-        
-        obj.pR = simulation_data['pR']
-        obj.pN = simulation_data['pN']
-        obj.F_n = simulation_data['F_n']
-        obj.Vc = simulation_data['Vc']
-        obj.H = simulation_data['H']
-        obj.Q = simulation_data['Q']
-        obj.A = simulation_data['A']
-        obj.q = simulation_data['q']
-        print('FEM loaded successfully.')
-        return obj
+    obj = FEM3D(Grid=None,AC=AC,AP=AP,S=S,R=R,BC=BC)
+    obj.freq = AC.freq
+    obj.w = AC.w
+    obj.AC = AC
+    obj.AP = AP
+    ##AlgControls
+    obj.c0 = AP.c0
+    obj.rho0 = AP.rho0
+    
+    obj.S = S
+    #%Mesh
+    obj.grid = Grid
+    obj.nos = Grid['nos']
+    obj.elem_surf = Grid['elem_surf']
+    obj.elem_vol =  Grid['elem_vol']
+    obj.domain_index_surf =  Grid['domain_index_surf']
+    obj.domain_index_vol =Grid['domain_index_vol']
+    obj.number_ID_faces =Grid['number_ID_faces']
+    obj.number_ID_vol = Grid['number_ID_vol']
+    obj.NumNosC = Grid['NumNosC']
+    obj.NumElemC = Grid['NumElemC']
+    obj.order = Grid["order"]
+    
+    obj.pR = simulation_data['pR']
+    obj.pN = simulation_data['pN']
+    obj.F_n = simulation_data['F_n']
+    obj.Vc = simulation_data['Vc']
+    obj.H = simulation_data['H']
+    obj.Q = simulation_data['Q']
+    obj.A = simulation_data['A']
+    obj.q = simulation_data['q']
+    print('FEM loaded successfully.')
+    return obj
 
+def closest_node(nodes, node):
+    nodes = np.asarray(nodes)
+    deltas = nodes - node
+    dist_2 = np.einsum('ij,ij->i', deltas, deltas)
+    return np.argmin(dist_2)
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -131,6 +164,7 @@ def Tetrahedron10deltaN(qsi):
                         [-t3,-t3,4 - t2 - 2*t3 - t1],[0,t3,t2],[t3,0,t1]])
     
     return deltaN.T
+@jit
 def find_no(nos,coord=[0,0,0]):
     gpts = nos
     coord = np.array(coord)
@@ -174,10 +208,31 @@ def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     X = np.transpose(Y, (1, 0, 2))
     H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
     Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    
+    H = H.tocsc()
+    Q = Q.tocsc()
+    
+    return H,Q
+def assemble_Q_H_5_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
+
+    Hez = np.zeros([4,4,NumElemC])
+    Qez = np.zeros([4,4,NumElemC])
+    for e in tqdm(range(NumElemC)):
+        con = elem_vol[e,:]
+        coord_el = nos[con,:]
+        
+        He, Qe = int_tetra_5gauss(coord_el,c0,rho0)    
+        Hez[:,:,e] = He
+        Qez[:,:,e] = Qe
+    
+    NLB=np.size(Hez,1)
+    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
+    X = np.transpose(Y, (1, 0, 2))
+    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
     H = H.tocsc()
     Q = Q.tocsc()
     return H,Q
-
 def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
     Hez = np.zeros([10,10,NumElemC])
@@ -208,7 +263,7 @@ def assemble_A_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_su
         for es in range(len(elem_surf[indx])):
             con = elem_surf[indx[es],:][0]
             coord_el = nos[con,:]
-            Ae = int_tri_impedance_simpl(coord_el,3)
+            Ae = int_tri_impedance_3gauss(coord_el)
             A[con[:,np.newaxis],con] = A[con[:,np.newaxis],con] + Ae
         Aa.append(csc_matrix(A))
   
@@ -324,7 +379,7 @@ def int_tetra_4gauss(coord_el,c0,rho0):
     detJa =  np.linalg.det(Ja)
     B = (np.linalg.inv(Ja)@GNi)
     argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
-    weigths = 1/24#**(1/3)
+    weigths = 1/24
 
     qsi = np.zeros([3,1]).ravel()
     for indx in range(4):
@@ -341,6 +396,49 @@ def int_tetra_4gauss(coord_el,c0,rho0):
     
     return He,Qe
 
+@jit
+def int_tetra_5gauss(coord_el,c0,rho0):
+
+    He = np.zeros([4,4])
+    Qe = np.zeros([4,4])
+    
+# if npg == 1:
+    #Pontos de Gauss para um tetraedro
+    a = 1/4
+    b = 1/6
+    c = 1/2
+    ptx = np.array([a,b,b,b,c])
+    pty = np.array([a,b,b,c,b])
+    ptz = np.array([a,b,c,b,b])
+    
+    ## argHe1 is independent of qsi's, therefore it can be pre computed
+    GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
+    Ja = (GNi@coord_el)
+    detJa = 1/6* np.linalg.det(Ja)
+    B = (np.linalg.inv(Ja)@GNi)
+    argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
+    weigths = np.array([-2/15,3/40,3/40,3/40,3/40])*6
+
+    qsi = np.zeros([3,1]).ravel()
+    for indx in range(5):
+        qsi[0] = ptx[indx]
+        wtx =  weigths[indx]
+        for indy in range(5):
+            qsi[1] = pty[indy]
+            wty =  weigths[indx]
+            for indz in range(5):
+                qsi[2] = ptz[indz]
+                wtz =  weigths[indx]
+
+                
+                Ni = np.array([[1-qsi[0]-qsi[1]-qsi[2]],[qsi[0]],[qsi[1]],[qsi[2]]])
+        
+                argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
+                
+                He = He + wtx*wty*wtz*argHe1   
+                Qe = Qe + wtx*wty*wtz*argQe1 
+    
+    return He,Qe
 @jit
 def int_tetra10_4gauss(coord_el,c0,rho0):
     
@@ -406,7 +504,7 @@ def int_tri_impedance_1gauss(coord_el):
     
     return Ae
 @jit
-def int_tri_impedance_simpl(coord_el,npg):
+def int_tri_impedance_3gauss(coord_el):
 
 
     Ae = np.zeros([3,3])
@@ -444,7 +542,46 @@ def int_tri_impedance_simpl(coord_el,npg):
             Ae = Ae + wtx*wty*argAe1
     
     return Ae
+@jit
+def int_tri_impedance_4gauss(coord_el):
 
+
+    Ae = np.zeros([3,3])
+    xe = np.array(coord_el[:,0])
+    ye = np.array(coord_el[:,1])
+    ze = np.array(coord_el[:,2])
+    #Formula de Heron - Area do Triangulo
+    
+    a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
+    b = np.sqrt((xe[1]-xe[2])**2+(ye[1]-ye[2])**2+(ze[1]-ze[2])**2)
+    c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
+    p = (a+b+c)/2
+    area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
+    # if npg == 3:
+    #Pontos de Gauss para um tetraedro
+    aa = 1/3
+    bb = 1/5
+    cc = 3/5
+    ptx = np.array([aa,bb,bb,cc])
+    pty = np.array([aa,bb,cc,aa])
+    wtz= np.array([-27/96,25/96,25/96,25/96])##*2 # Pesos de Gauss
+
+    for indx in range(4):
+        qsi1 = ptx[indx]
+        wtx =  wtz[indx]
+        for indx in range(4):
+            qsi2 = pty[indx]
+            wty =  wtz[indx]
+            
+            Ni = np.array([[qsi1],[qsi2],[1-qsi1-qsi2]])
+            
+                
+            detJa= area_elm
+            argAe1 = Ni@np.transpose(Ni)*detJa
+            
+            Ae = Ae + wtx*wty*argAe1
+    
+    return Ae
 @jit
 def int_tri10_3gauss(coord_el):
 
@@ -497,15 +634,21 @@ def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     ps = spsolve(G,b)
     return ps
 
+
+
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
         """
-        
+        Initializes FEM3D Class
 
         Parameters
         ----------
         Grid : GridImport()
-            GridImport object created with MENAV.GridImport('YOUGEO.geo',fmax,maxSize,scale).
+            GridImport object created with femder.GridImport('YOURGEO.geo',fmax,maxSize,scale).
+        S: Source
+            Source object containing source coordinates
+        R: Receiver
+            Receiver object containing receiver coordinates
         AP : AirProperties
             AirPropeties object containing, well, air properties.
         AC : AlgControls
@@ -545,7 +688,7 @@ class FEM3D:
             self.NumNosC = Grid.NumNosC
             self.NumElemC = Grid.NumElemC
             self.order = Grid.order
-            
+            self.path_to_geo = Grid.path_to_geo
         self.npg = 4
         self.pR = None
         self.pN = None
@@ -553,6 +696,20 @@ class FEM3D:
         self.Vc = None
         
     def compute(self,timeit=True):
+        """
+        Computes acoustic pressure for every node in the mesh.
+
+        Parameters
+        ----------
+        timeit : TYPE, optional
+            Prints solve time. The default is True.
+
+        Returns
+        -------
+        None.
+
+        """
+        
         then = time.time()
         if isinstance(self.c0, complex) or isinstance(self.rho0, complex):
             self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
@@ -570,15 +727,7 @@ class FEM3D:
             self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
         #Assemble A(Amortecimento)
         if self.BC != None:
-        #     i = 0
-        #     for bl in self.number_ID_faces:
-        #         indx = np.argwhere(self.domain_index_surf==bl)
-        #         for es in range(len(self.elem_surf[indx])):
-        #             con = self.elem_surf[indx[es],:][0]
-        #             coord_el = self.nos[con,:]
-        #             Ae = int_tri_impedance_simpl(coord_el,npg)
-        #             self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
-        #         i += 1
+
             if self.order == 1:
                 self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
             elif self.order == 2:
@@ -628,28 +777,55 @@ class FEM3D:
                 print(f'Time taken: {self.t/60} min')
     
     def eigenfrequency(self,neigs=12,near_freq=None,timeit=True):
+        """
+        Solves eigenvalue problem 
+
+        Parameters
+        ----------
+        neigs : TYPE, optional
+            Number of eigenvalues to solve. The default is 12.
+        near_freq : TYPE, optional
+            Search for eigenvalues close to this frequency. The default is None.
+        timeit : TYPE, optional
+            Print solve time. The default is True.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+        
         self.neigs = neigs
         self.near = near_freq
         
         # from numpy.linalg import inv
         # from scipy.sparse.linalg import eigsh
-        from scipy.sparse.linalg import eigs,inv
+        from scipy.sparse.linalg import eigs
         # from numpy.linalg import inv
         
         then = time.time()
         self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
         self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
+        
+        if self.order == 1:
+            self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+        elif self.order == 2:
+            self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+         
+        print('Solving System ...')
+        # G = inv(self.Q)*(self.H)
+        G = spsolve(self.Q,self.H)
+        # G = gmres(self.Q,self.H)
 
-        self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
-            
-        G = inv(self.Q)*(self.H)
+        print('Finding Eigenvalues and Eigenvectors ...')
         if self.near != None:
             [wc,Vc] = eigs(G,self.neigs,sigma = 2*np.pi*(self.near**2),which='SM')
         else:
             [wc,Vc] = eigs(G,self.neigs,which='SM')
         
         k = np.sort(np.sqrt(wc))
-        indk = np.argsort(wc)
+        # indk = np.argsort(wc)
         # Vcn = Vc/np.amax(Vc)
         self.Vc = Vc
         
@@ -798,8 +974,8 @@ class FEM3D:
         fi = find_nearest((np.real(self.F_n)),freq)
         # print(fi)
         unq = np.unique(self.elem_surf)
-        uind = np.arange(np.amin(unq),np.amax(unq)+1,1)
-        
+        uind = np.arange(np.amin(unq),np.amax(unq)+1,1,dtype = int)
+        print(uind)
         vertices = self.nos[uind].T
         # vertices = self.nos[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
@@ -829,19 +1005,41 @@ class FEM3D:
         pio.renderers.default = renderer
         fig.show()       
     def evaluate(self,R,plot=False):
+        """
+        Evaluates pressure at a given receiver coordinate, for best results, include receiver
+        coordinates as nodes in mesh, by passing Receiver() in GridImport3D().
+
+        Parameters
+        ----------
+        R : Receiver()
+            Receiver object with receiver coodinates.
+        plot : Bool, optional
+            Plots SPL for given nodes, if len(R)>1, also plots average. The default is False.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+        
         
         self.R = R
 
         self.pR = np.ones([len(self.freq),len(R.coord)],dtype = np.complex128)
         if plot:
             plt.style.use('seaborn-notebook')
-            # plt.figure(figsize=(5*1.62,5))
+            plt.figure(figsize=(5*1.62,5))
+            if len(self.pR[0,:]) > 1:
+                linest = ':'
+            else:
+                linest = '-'
             for i in range(len(self.R.coord)):
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
-                plt.semilogx(self.freq,p2SPL(self.pR[:,i]),label=f'R{i} | {self.R.coord[0]}m')
+                plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[0]}m')
                 
             if len(self.R.coord) > 1:
-                plt.semilogx(self.freq,np.mean(p2SPL(self.pR)),label='Average')
+                plt.semilogx(self.freq,np.mean(p2SPL(self.pR),axis=1),label='Average',linewidth = 5)
             
             plt.grid()
             plt.legend()
@@ -855,11 +1053,30 @@ class FEM3D:
     
         
     def surf_evaluate(self,freq,renderer='notebook',d_range = 45):
+        """
+        Evaluates pressure in the boundary of the mesh for a given frequency, and plots with plotly.
+        Choose adequate rederer, if using Spyder or similar, use renderer='browser'.
+
+        Parameters
+        ----------
+        freq : float
+            Frequency to evaluate.
+        renderer : str, optional
+            Plotly render engine. The default is 'notebook'.
+        d_range : float, optional
+            Dynamic range of plot. The default is 45dB.
+
+        Returns
+        -------
+        None.
+
+        """
+        
         import plotly.graph_objs as go
         
         fi = np.argwhere(self.freq==freq)[0][0]
         unq = np.unique(self.elem_surf)
-        uind = np.arange(np.amin(unq),np.amax(unq)+1,1)
+        uind = np.arange(np.amin(unq),np.amax(unq)+1,1,dtype=int)
         
         vertices = self.nos[uind].T
         # vertices = self.nos[np.unique(self.elem_surf)].T
@@ -893,6 +1110,19 @@ class FEM3D:
         fig.show()
         
     def plot_problem(self,renderer='notebook'):
+        """
+        Plots surface mesh, source and receivers in 3D.
+        
+        Parameters
+        ----------
+        renderer : str, optional
+            Plotly render engine. The default is 'notebook'.
+
+        Returns
+        -------
+        None.
+
+        """
         
         import plotly.figure_factory as ff
         import plotly.graph_objs as go
@@ -923,7 +1153,373 @@ class FEM3D:
         pio.renderers.default = renderer
         fig.show()
         
+    def pressure_field(self, Pmin=None, frequencies=[60], Pmax=None, axis=['xy', 'yz', 'xz', 'boundary'],
+                       axis_visibility={'xy': True, 'yz': True, 'xz': 'legendonly', 'boundary': True},
+                       coord_axis={'xy': None, 'yz': None, 'xz': None, 'boundary': None}, dilate_amount=0.9,
+                       view_planes=False, gridsize=0.1, gridColor="rgb(230, 230, 255)",
+                       opacity=0.2, opacityP=1, hide_dots=False, figsize=(950, 800),
+                       showbackground=True, showlegend=True, showedges=True, colormap='jet',
+                       saveFig=False, colorbar=True, showticklabels=True, info=True, title=True,
+                       axis_labels=['(X) Width [m]', '(Y) Length [m]', '(Z) Height [m]'], showgrid=True,
+                       camera_angles=['floorplan', 'section', 'diagonal'], device='CPU',
+                       transparent_bg=True, returnFig=False, show=True, filename=None,
+                       renderer='notebook'):
+    
+        import gmsh
+        import sys
+        # from matplotlib.colors import Normalize
+        import plotly
+        import plotly.figure_factory as ff
+        import plotly.graph_objs as go
+        import os
+        # import matplotlib.pyplot as plt
+        import warnings
+        warnings.filterwarnings("ignore")
+
+        # from utils.helpers import set_cpu, set_gpu, progress_bar
+    
+        start = time.time()
+        # Creating planes
+        # self.mesh_room()
+        gmsh.initialize(sys.argv)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMin", gridsize * 0.95)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", gridsize)
+        # model = self.model
+        
+        filename, file_extension = os.path.splitext(self.path_to_geo)
+        path_name = os.path.dirname(self.path_to_geo)
+        tgv = gmsh.model.getEntities(3)
+        # ab = gmsh.model.getBoundingBox(3, tgv[0][1])
+    
+        xmin = np.amin(self.nos[:,0])
+        xmax = np.amax(self.nos[:,0])
+        ymin = np.amin(self.nos[:,1])
+        ymax = np.amax(self.nos[:,1])
+        zmin = np.amin(self.nos[:,2])
+        zmax = np.amax(self.nos[:,2])
+    
+        if coord_axis['xy'] is None:
+            coord_axis['xy'] = self.R.coord[0, 2] - 0.01
+    
+        if coord_axis['yz'] is None:
+            coord_axis['yz'] = self.R.coord[0, 0]
+    
+        if coord_axis['xz'] is None:
+            coord_axis['xz'] = self.R.coord[0, 1]
+    
+        if coord_axis['boundary'] is None:
+            coord_axis['boundary'] = (zmin + zmax) / 2
+        with suppress_stdout():
+            if 'xy' in axis:
+                gmsh.clear()
+                gmsh.open(self.path_to_geo)
+                tgv = gmsh.model.getEntities(3)
+                gmsh.model.occ.addPoint(xmin, ymin, coord_axis['xy'], 0., 3001)
+                gmsh.model.occ.addPoint(xmax, ymin, coord_axis['xy'], 0., 3002)
+                gmsh.model.occ.addPoint(xmax, ymax, coord_axis['xy'], 0., 3003)
+                gmsh.model.occ.addPoint(xmin, ymax, coord_axis['xy'], 0., 3004)
+                gmsh.model.occ.addLine(3001, 3004, 3001)
+                gmsh.model.occ.addLine(3004, 3003, 3002)
+                gmsh.model.occ.addLine(3003, 3002, 3003)
+                gmsh.model.occ.addLine(3002, 3001, 3004)
+                gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
+                gmsh.model.occ.addPlaneSurface([15000], 15000)
+                gmsh.model.addPhysicalGroup(2, [15000], 15000)
+        
+                gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
+        
+                # gmsh.model.occ.dilate([(2, 15000)],
+                #                       (xmin + xmax) / 2, (ymin + ymax) / 2, coord_axis['xy'],
+                #                       dilate_amount, dilate_amount, dilate_amount)
+                gmsh.model.occ.synchronize()
+                gmsh.model.mesh.generate(2)
+                vtags, vxy, _ = gmsh.model.mesh.getNodes()
+                nxy = vxy.reshape((-1, 3))
+                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+                nxysurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+        
+            if 'yz' in axis:
+                gmsh.clear()
+                gmsh.open(self.path_to_geo)
+                tgv = gmsh.model.getEntities(3)
+                gmsh.model.occ.addPoint(coord_axis['yz'], ymin, zmin, 0., 3001)
+                gmsh.model.occ.addPoint(coord_axis['yz'], ymax, zmin, 0., 3002)
+                gmsh.model.occ.addPoint(coord_axis['yz'], ymax, zmax, 0., 3003)
+                gmsh.model.occ.addPoint(coord_axis['yz'], ymin, zmax, 0., 3004)
+                gmsh.model.occ.addLine(3001, 3004, 3001)
+                gmsh.model.occ.addLine(3004, 3003, 3002)
+                gmsh.model.occ.addLine(3003, 3002, 3003)
+                gmsh.model.occ.addLine(3002, 3001, 3004)
+                gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
+                gmsh.model.occ.addPlaneSurface([15000], 15000)
+                gmsh.model.addPhysicalGroup(2, [15000], 15000)
+        
+                gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
+        
+                # gmsh.model.occ.dilate([(2, 15000)],
+                #                       coord_axis['yz'], (ymin + ymax) / 2, coord_axis['boundary'],
+                #                       dilate_amount, dilate_amount, dilate_amount)
+                gmsh.model.occ.synchronize()
+                gmsh.model.mesh.generate(2)
+                # gmsh.write(path_name + 'current_field_yz.msh')
+                # gmsh.write(outputs + 'current_field_yz.brep')
+                vtags, vyz, _ = gmsh.model.mesh.getNodes()
+                nyz = vyz.reshape((-1, 3))
+                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+                nyzsurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+                
+        
+            if 'xz' in axis:
+                gmsh.clear()
+                gmsh.open(self.path_to_geo)
+                tgv = gmsh.model.getEntities(3)
+                gmsh.model.occ.addPoint(xmin, coord_axis['xz'], zmin, 0., 3001)
+                gmsh.model.occ.addPoint(xmax, coord_axis['xz'], zmin, 0., 3002)
+                gmsh.model.occ.addPoint(xmax, coord_axis['xz'], zmax, 0., 3003)
+                gmsh.model.occ.addPoint(xmin, coord_axis['xz'], zmax, 0., 3004)
+                gmsh.model.occ.addLine(3001, 3004, 3001)
+                gmsh.model.occ.addLine(3004, 3003, 3002)
+                gmsh.model.occ.addLine(3003, 3002, 3003)
+                gmsh.model.occ.addLine(3002, 3001, 3004)
+                gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
+                gmsh.model.occ.addPlaneSurface([15000], 15000)
+                gmsh.model.addPhysicalGroup(2, [15000], 15000)
+        
+                gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
+        
+                # gmsh.model.occ.dilate([(2, 15000)],
+                #                       (xmin + xmax) / 2, coord_axis['xz'], (zmin + zmax) / 2,
+                #                       dilate_amount, dilate_amount, dilate_amount)
+                gmsh.model.occ.synchronize()
+                gmsh.model.mesh.generate(2)
+                vtags, vxz, _ = gmsh.model.mesh.getNodes()
+                nxz = vxz.reshape((-1, 3))
+                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+                nxzsurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+        
+            # if view_planes:
+            #     gmsh.clear()
+            #     gmsh.merge(outputs + 'current_mesh.brep')
+            #     gmsh.merge(outputs + 'boundary_field.brep')
+            #     gmsh.merge(outputs + 'current_field_xy.brep')
+            #     gmsh.merge(outputs + 'current_field_yz.brep')
+            #     gmsh.merge(outputs + 'current_field_xz.brep')
+            #     gmsh.model.mesh.generate(2)
+            #     gmsh.model.occ.synchronize()
+            #     gmsh.fltk.run()
+            gmsh.finalize()
+    
+        # Field plane evaluation
+        prog = 0
+        # for fi in frequencies:
+        # if len(frequencies) > 1:
+        #     progress_bar(prog / len(frequencies))
+            
+        fi = np.argwhere(self.freq==frequencies)[0][0]
+        # boundData = self.bem.simulation._solution_data[idx]
+
+
+
+            
+        # print(fi)
+        unq = np.unique(self.elem_surf)
+        uind = np.arange(np.amin(unq),np.amax(unq)+1,1,dtype=int)
+        if 'xy' in axis:
+            pxy = np.zeros([len(nxy),1],dtype = int).ravel()
+            for i in range(len(nxy)):
+                pxy[i] = closest_node(self.nos,nxy[i,:])
+            values_xy = np.real(p2SPL(self.pN[fi,pxy]))
+
+        if 'yz' in axis:             
+            pyz = np.zeros([len(nxy),1],dtype = int).ravel()
+            for i in range(len(nyz)):
+                pyz[i] = closest_node(self.nos,nyz[i,:])
+            values_yz = np.real(p2SPL(self.pN[fi,pyz]))
+        if 'xz' in axis:
+            pxz = np.zeros([len(nxy),1],dtype = int).ravel()
+            for i in range(len(nxz)):
+                pxz[i] = closest_node(self.nos,nxz[i,:])
+            values_xz = np.real(p2SPL(self.pN[fi,pxz]))
+
+        if 'boundary' in axis:     
+
+            values_boundary = np.real(p2SPL(self.pN[fi,uind]))  
+        # Plotting
+        plotly.io.renderers.default = renderer
+
+        if info is False:
+            showgrid = False
+            title = False
+            showticklabels = False
+            colorbar = False
+            showlegend = False
+            showbackground = False
+            axis_labels = ['', '', '']
+
+        # Room
+        vertices = self.nos.T#[np.unique(self.elem_surf)].T
+        elements = self.elem_surf.T
+        
+        fig = ff.create_trisurf(
+            x=vertices[0, :],
+            y=vertices[1, :],
+            z=vertices[2, :],
+            simplices=elements.T,
+            color_func=elements.shape[1] * ["rgb(255, 222, 173)"],)
+        fig['data'][0].update(opacity=0.3)
+        fig.update_layout(title=dict(text = f'Frequency: {(np.real(self.freq[fi])):.2f} Hz'))
+        # Planes
+        # grid = boundData[0].space.grid
+        # vertices = grid.vertices
+        # elements = grid.elements
+        # local_coordinates = np.array([[1.0 / 3], [1.0 / 3]])
+        # values = np.zeros(grid.entity_count(0), dtype="float64")
+        # for element in grid.entity_iterator(0):
+        #     index = element.index
+        #     local_values = np.real(20 * np.log10(np.abs((boundData[0].evaluate(index, local_coordinates))) / 2e-5))
+        #     values[index] = local_values.flatten()
+        if Pmin is None:
+            Pmin = min(values_xy)
+        if Pmax is None:
+            Pmax = max(values_xy)
+
+        colorbar_dict = {'title': 'SPL [dB]',
+                         'titlefont': {'color': 'black'},
+                         'title_side': 'right',
+                         'tickangle': -90,
+                         'tickcolor': 'black',
+                         'tickfont': {'color': 'black'}, }
+
+        if 'xy' in axis:
+            vertices = nxy.T
+            elements = nxysurf.T
+            fig.add_trace(go.Mesh3d(x=vertices[0, :], y=vertices[1, :], z=vertices[2, :],
+                                    i=elements[0, :], j=elements[1, :], k=elements[2, :], intensity=values_xy,
+                                    colorscale=colormap, intensitymode='vertex', name='XY', showlegend=showlegend,
+                                    visible=axis_visibility['xy'], cmin=Pmin, cmax=Pmax, opacity=opacityP,
+                                    showscale=colorbar, colorbar=colorbar_dict))
+            fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        if 'yz' in axis:
+            vertices = nyz.T
+            elements = nyzsurf.T
+            fig.add_trace(go.Mesh3d(x=vertices[0, :], y=vertices[1, :], z=vertices[2, :],
+                                    i=elements[0, :], j=elements[1, :], k=elements[2, :], intensity=values_yz,
+                                    colorscale=colormap, intensitymode='vertex', name='YZ', showlegend=showlegend,
+                                    visible=axis_visibility['yz'], cmin=Pmin, cmax=Pmax, opacity=opacityP,
+                                    showscale=colorbar, colorbar=colorbar_dict))
+            fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        if 'xz' in axis:
+            vertices = nxz.T
+            elements = nxzsurf.T
+            fig.add_trace(go.Mesh3d(x=vertices[0, :], y=vertices[1, :], z=vertices[2, :],
+                                    i=elements[0, :], j=elements[1, :], k=elements[2, :], intensity=values_xz,
+                                    colorscale=colormap, intensitymode='vertex', name='XZ', showlegend=showlegend,
+                                    visible=axis_visibility['xz'], cmin=Pmin, cmax=Pmax, opacity=opacityP,
+                                    showscale=colorbar, colorbar=colorbar_dict))
+            fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        if 'boundary' in axis:
+            vertices = self.nos[uind].T
+            elements = self.elem_surf.T
+            fig.add_trace(go.Mesh3d(x=vertices[0, :], y=vertices[1, :], z=vertices[2, :],
+                                    i=elements[0, :], j=elements[1, :], k=elements[2, :], intensity=values_boundary,
+                                    colorscale=colormap, intensitymode='vertex', name='Boundary', showlegend=showlegend,
+                                    visible=axis_visibility['boundary'], cmin=Pmin, cmax=Pmax, opacity=opacityP,
+                                    showscale=colorbar, colorbar=colorbar_dict))
+            fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        if not hide_dots:
+            try:
+                if self.R != None:
+                    fig.add_trace(go.Scatter3d(x = self.R.coord[:,0], y = self.R.coord[:,1], z = self.R.coord[:,2],name="Receivers",mode='markers'))
+            except:
+                pass
+            
+            if self.S != None:    
+                if self.S.wavetype == "spherical":
+                    fig.add_trace(go.Scatter3d(x = self.S.coord[:,0], y = self.S.coord[:,1], z = self.S.coord[:,2],name="Sources",mode='markers'))
+                   
+                    
+                    
+        fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        fig.update_layout(legend_orientation="h", legend=dict(x=0, y=1),
+                          width=figsize[0], height=figsize[1],
+                          scene=dict(xaxis_title=axis_labels[0],
+                                     yaxis_title=axis_labels[1],
+                                     zaxis_title=axis_labels[2],
+                                     xaxis=dict(showticklabels=showticklabels, showgrid=showgrid,
+                                                showline=showgrid, zeroline=showgrid),
+                                     yaxis=dict(showticklabels=showticklabels, showgrid=showgrid,
+                                                showline=showgrid, zeroline=showgrid),
+                                     zaxis=dict(showticklabels=showticklabels, showgrid=showgrid,
+                                                showline=showgrid, zeroline=showgrid),
+                                     ))
+        if title is False:
+            fig.update_layout(title="")
+        if transparent_bg:
+            fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
+                               'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
+        if saveFig:
+            folderCheck = os.path.exists('/Pressure plots')
+            if folderCheck is False:
+                os.mkdir('/Pressure plots')
+            if filename is None:
+                for camera in camera_angles:
+                    if camera == 'top' or camera == 'floorplan':
+                        camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'lateral' or camera == 'side' or camera == 'section':
+                        camera_dict = dict(eye=dict(x=2.5, y=0., z=0.0),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'front':
+                        camera_dict = dict(eye=dict(x=0., y=2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'rear' or camera == 'back':
+                        camera_dict = dict(eye=dict(x=0., y=-2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_front':
+                        camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_rear':
+                        camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    fig.update_layout(scene_camera=camera_dict)
+
+                    fig.write_image(self.folder + '/Pressure plots/' + saveFig +
+                                    f'_3D_pressure_plot_{camera}_{int(frequencies)}Hz.png', scale=2)
+            else:
+                fig.write_image(self.folder + '/Pressure plots/' + filename + '.png', scale=2)
+
+        if show:
+            plotly.offline.iplot(fig)
+        prog += 1
+    
+        end = time.time()
+        elapsed_time = (end - start) / 60
+        print(f'\n\tElapsed time to evaluate acoustic field: {elapsed_time:.2f} minutes\n')
+        if returnFig:
+            return fig        
     def fem_save(self, filename=time.strftime("%Y%m%d-%H%M%S"), ext = ".pickle"):
+        """
+        Saves FEM3D simulation into a pickle file.
+
+        Parameters
+        ----------
+        filename : str, optional
+            File name to be saved. The default is time.strftime("%Y%m%d-%H%M%S").
+        ext : str, optional
+            File extension. The default is ".pickle".
+
+        Returns
+        -------
+        None.
+
+        """
+        
         # Simulation data
         gridpack = {'nos': self.nos,
                 'elem_vol': self.elem_vol,
