@@ -59,7 +59,7 @@ import femder as fd
 
 path_to_geo = '../Mshs/FEM_3D/room_mesh_MG_treatments - Copy.geo'
 AP = fd.AirProperties(c0 = 343)
-AC = fd.AlgControls(AP,20,200,1)
+AC = fd.AlgControls(AP,400,400,1)
 
 S = fd.Source("spherical")
 S.coord = np.array([[1.53/2,2.7+1.32,1.14],[-1.53/2,2.7+1.32,1.14]])
@@ -69,7 +69,7 @@ S.q = np.array([[0.0001],[0.0001]])
 
 R = fd.Receiver()
 R.star([0,2.7,1.14],0.15)
-grid = fd.GridImport3D(AP,path_to_geo,S,R,200,6,1,plot=False,order=1)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,400,6,1,plot=False,order=1)
 # grid.plot_mesh(True)
 
 bc = fd.BC(AC,AP)
@@ -89,7 +89,7 @@ pN = obj.evaluate(R,plot=True)
 
 #%%
 
-obj.pressure_field(frequencies = 49, renderer='browser')
+obj.pressure_field(frequencies = 400    , renderer='browser')
 
 #%%
 

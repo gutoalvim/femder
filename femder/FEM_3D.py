@@ -100,6 +100,51 @@ def fem_load(filename,ext='.pickle'):
     obj.q = simulation_data['q']
     print('FEM loaded successfully.')
     return obj
+@jit
+def coord_interpolation(nos,elem_vol,coord,pN):
+    coord = np.array(coord)
+    pelem,pind = prob_elem(nos, elem_vol, coord)
+    indx = which_tetra(nos,pelem,coord)
+    indx = pind[indx]
+    con = elem_vol[indx,:][0]
+    coord_el = nos[con,:]
+    GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
+    Ja = (GNi@coord_el).T
+
+    icoord = coord - coord_el[0,:]
+    qsi = (np.linalg.inv(Ja)@icoord)
+    Ni = np.array([[1-qsi[0]-qsi[1]-qsi[2]],[qsi[0]],[qsi[1]],[qsi[2]]])
+
+    Nip = Ni.T@pN[:,con].T
+    return Nip.T
+@jit
+def prob_elem(nos,elem,coord):
+    cl1 = closest_node(nos, coord)
+    eln = np.where(elem==cl1)
+    pelem = elem[eln[0]]
+    return pelem,eln[0]
+@jit
+def which_tetra(node_coordinates, node_ids, p):
+    ori=node_coordinates[node_ids[:,0],:]
+    v1=node_coordinates[node_ids[:,1],:]-ori
+    v2=node_coordinates[node_ids[:,2],:]-ori
+    v3=node_coordinates[node_ids[:,3],:]-ori
+    n_tet=len(node_ids)
+    v1r=v1.T.reshape((3,1,n_tet))
+    v2r=v2.T.reshape((3,1,n_tet))
+    v3r=v3.T.reshape((3,1,n_tet))
+    mat = np.concatenate((v1r,v2r,v3r), axis=1)
+    inv_mat = np.linalg.inv(mat.T).T    # https://stackoverflow.com/a/41851137/12056867        
+    if p.size==3:
+        p=p.reshape((1,3))
+    n_p=p.shape[0]
+    orir=np.repeat(ori[:,:,np.newaxis], n_p, axis=2)
+    newp=np.einsum('imk,kmj->kij',inv_mat,p.T-orir)
+    val=np.all(newp>=0, axis=1) & np.all(newp <=1, axis=1) & (np.sum(newp, axis=1)<=1)
+    id_tet, id_p = np.nonzero(val)
+    res = -np.ones(n_p, dtype=id_tet.dtype) # Sentinel value
+    res[id_p]=id_tet
+    return res
 
 def closest_node(nodes, node):
     nodes = np.asarray(nodes)
@@ -634,8 +679,7 @@ def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     ps = spsolve(G,b)
     return ps
 
-
-
+    
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
         """
@@ -1035,7 +1079,8 @@ class FEM3D:
             else:
                 linest = '-'
             for i in range(len(self.R.coord)):
-                self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+                # self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+                self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
                 plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[0]}m')
                 
             if len(self.R.coord) > 1:
@@ -1325,22 +1370,25 @@ class FEM3D:
         unq = np.unique(self.elem_surf)
         uind = np.arange(np.amin(unq),np.amax(unq)+1,1,dtype=int)
         if 'xy' in axis:
-            pxy = np.zeros([len(nxy),1],dtype = int).ravel()
-            for i in range(len(nxy)):
-                pxy[i] = closest_node(self.nos,nxy[i,:])
-            values_xy = np.real(p2SPL(self.pN[fi,pxy]))
+            pxy = np.zeros([len(nxy),1],dtype = np.complex128).ravel()
+            for i in tqdm(range(len(nxy))):
+                # pxy[i] = closest_node(self.nos,nxy[i,:])
+                # print(coord_interpolation(self.nos, self.elem_vol, nxy[i,:], self.pN)[fi])
+                pxy[i] = coord_interpolation(self.nos, self.elem_vol, nxy[i,:], self.pN)[fi][0]
+            values_xy = np.real(p2SPL(pxy))
 
         if 'yz' in axis:             
-            pyz = np.zeros([len(nxy),1],dtype = int).ravel()
-            for i in range(len(nyz)):
-                pyz[i] = closest_node(self.nos,nyz[i,:])
-            values_yz = np.real(p2SPL(self.pN[fi,pyz]))
+            pyz = np.zeros([len(nyz),1],dtype = np.complex128).ravel()
+            for i in tqdm(range(len(nyz))):
+                pyz[i] = coord_interpolation(self.nos, self.elem_vol, nyz[i,:], self.pN)[fi][0]
+            values_yz = np.real(p2SPL(pyz))
         if 'xz' in axis:
-            pxz = np.zeros([len(nxy),1],dtype = int).ravel()
-            for i in range(len(nxz)):
-                pxz[i] = closest_node(self.nos,nxz[i,:])
-            values_xz = np.real(p2SPL(self.pN[fi,pxz]))
-
+            pxz = np.zeros([len(nxz),1],dtype = np.complex128).ravel()
+            for i in tqdm(range(len(nxz))):
+                pxz[i] = coord_interpolation(self.nos, self.elem_vol, nxz[i,:], self.pN)[fi][0]
+                # print(coord_interpolation(self.nos, self.elem_vol, nxz[i,:], self.pN)[fi][0])
+            # print(pxz)                
+            values_xz = np.real(p2SPL(pxz))
         if 'boundary' in axis:     
 
             values_boundary = np.real(p2SPL(self.pN[fi,uind]))  

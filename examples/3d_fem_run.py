@@ -109,3 +109,7 @@ plt.legend()
 plt.ylim([0.1,7])
 plt.xlim([45,113])
 plt.grid()
+
+#%%
+
+obj.pressure_field()
