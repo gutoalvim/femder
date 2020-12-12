@@ -41,7 +41,6 @@ grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
 #%%
 # grid.plot_mesh(False)
 obj = fd.FEM3D(grid,S,R,AP,AC,BC)
-obj.npg = 4
 #%%
 obj.compute()
 #%%
@@ -111,5 +110,5 @@ plt.xlim([45,113])
 plt.grid()
 
 #%%
-
-obj.pressure_field()
+obj.pressure_field(frequencies = 49, renderer='browser')
+    

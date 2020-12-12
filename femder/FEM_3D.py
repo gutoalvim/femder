@@ -1079,8 +1079,8 @@ class FEM3D:
             else:
                 linest = '-'
             for i in range(len(self.R.coord)):
-                # self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
-                self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
+                self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+                # self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
                 plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[0]}m')
                 
             if len(self.R.coord) > 1:
@@ -1150,6 +1150,8 @@ class FEM3D:
             intensitymode='vertex',
  
         ))  
+        
+
         import plotly.io as pio
         pio.renderers.default = renderer
         fig.show()
@@ -1171,10 +1173,9 @@ class FEM3D:
         
         import plotly.figure_factory as ff
         import plotly.graph_objs as go
-        
+        from random import random
         vertices = self.nos.T#[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
-        
         fig = ff.create_trisurf(
             x=vertices[0, :],
             y=vertices[1, :],
@@ -1194,6 +1195,24 @@ class FEM3D:
         if self.S != None:    
             if self.S.wavetype == "spherical":
                 fig.add_trace(go.Scatter3d(x = self.S.coord[:,0], y = self.S.coord[:,1], z = self.S.coord[:,2],name="Sources",mode='markers'))
+        
+        if self.BC != None:
+            
+            for bl in self.number_ID_faces:
+                indx = np.argwhere(self.domain_index_surf==bl)
+                con = self.elem_surf[indx,:][:,0,:]
+                vertices = self.nos.T#[con,:].T
+                con = con.T
+                fig.add_trace(go.Mesh3d(
+                x=vertices[0, :],
+                y=vertices[1, :],
+                z=vertices[2, :],
+                i=con[0, :], j=con[1, :], k=con[2, :],opacity=0.3,showlegend=True,visible=True,name=f'Physical Group {int(bl)}'
+                ))
+                # fig['data'][0].update(opacity=0.3)
+            # 
+                # fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+
         import plotly.io as pio
         pio.renderers.default = renderer
         fig.show()
