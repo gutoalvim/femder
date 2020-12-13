@@ -780,7 +780,7 @@ class FEM3D:
             
             # print('Solving System')
             for ii in range(len(self.S.coord)):
-                self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
                 
             self.q = csc_matrix(self.q)
             for N in tqdm(range(len(self.freq))):
@@ -1081,7 +1081,7 @@ class FEM3D:
             for i in range(len(self.R.coord)):
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
                 # self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
-                plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[0]}m')
+                plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[i,:]}m')
                 
             if len(self.R.coord) > 1:
                 plt.semilogx(self.freq,np.mean(p2SPL(self.pR),axis=1),label='Average',linewidth = 5)
@@ -1150,13 +1150,14 @@ class FEM3D:
             intensitymode='vertex',
  
         ))  
-        
+
 
         import plotly.io as pio
         pio.renderers.default = renderer
         fig.show()
         
-    def plot_problem(self,renderer='notebook'):
+    def plot_problem(self,renderer='notebook',saveFig=False,filename=None,
+                     camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,extension='png'):
         """
         Plots surface mesh, source and receivers in 3D.
         
@@ -1173,7 +1174,6 @@ class FEM3D:
         
         import plotly.figure_factory as ff
         import plotly.graph_objs as go
-        from random import random
         vertices = self.nos.T#[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
         fig = ff.create_trisurf(
@@ -1212,9 +1212,50 @@ class FEM3D:
                 # fig['data'][0].update(opacity=0.3)
             # 
                 # fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
-
+                
         import plotly.io as pio
         pio.renderers.default = renderer
+        
+        if title is False:
+            fig.update_layout(title="")
+        if transparent_bg:
+            fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
+                               'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
+        if saveFig:
+            folderCheck = os.path.exists('/Layout')
+            if folderCheck is False:
+                os.mkdir('/Layout')
+            if filename is None:
+                for camera in camera_angles:
+                    if camera == 'top' or camera == 'floorplan':
+                        camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'lateral' or camera == 'side' or camera == 'section':
+                        camera_dict = dict(eye=dict(x=2.5, y=0., z=0.0),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'front':
+                        camera_dict = dict(eye=dict(x=0., y=2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'rear' or camera == 'back':
+                        camera_dict = dict(eye=dict(x=0., y=-2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_front':
+                        camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_rear':
+                        camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    fig.update_layout(scene_camera=camera_dict)
+    
+                    fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
+            else:
+                fig.write_image(filename+'.'+extension, scale=2)
         fig.show()
         
     def pressure_field(self, Pmin=None, frequencies=[60], Pmax=None, axis=['xy', 'yz', 'xz', 'boundary'],
@@ -1525,9 +1566,6 @@ class FEM3D:
             fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
                                'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
         if saveFig:
-            folderCheck = os.path.exists('/Pressure plots')
-            if folderCheck is False:
-                os.mkdir('/Pressure plots')
             if filename is None:
                 for camera in camera_angles:
                     if camera == 'top' or camera == 'floorplan':
@@ -1556,10 +1594,9 @@ class FEM3D:
                                            center=dict(x=0, y=0, z=0), )
                     fig.update_layout(scene_camera=camera_dict)
 
-                    fig.write_image(self.folder + '/Pressure plots/' + saveFig +
-                                    f'_3D_pressure_plot_{camera}_{int(frequencies)}Hz.png', scale=2)
+                    fig.write_image(f'_3D_pressure_plot_{camera}_{int(self.freq[fi])}Hz.png', scale=2)
             else:
-                fig.write_image(self.folder + '/Pressure plots/' + filename + '.png', scale=2)
+                fig.write_image(filename + '.png', scale=2)
 
         if show:
             plotly.offline.iplot(fig)
