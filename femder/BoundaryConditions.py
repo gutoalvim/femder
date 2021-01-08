@@ -6,8 +6,8 @@ class BC():
         self.AC = AC
         self.mu = {}
         self.v = {}
-        self.rhoc = []
-        self.cc = []
+        self.rhoc = {}
+        self.cc = {}
     def impedance(self,domain_index, impedance):
         """
         
@@ -106,19 +106,53 @@ class BC():
         None.
 
         """
-        
-        self.v[domain_index] = np.array(velocity)           
+        if type(velocity) == int or float:
+            self.v[domain_index] = np.ones_like(self.AC.freq)*velocity
+              
      
     def TMM(self,domain_index,TMM):
             
         from scipy import interpolate
-        
+
         f_real = interpolate.interp1d(TMM.freq.ravel(),np.real(TMM.y).ravel())
         f_imag = interpolate.interp1d(TMM.freq.ravel(),np.imag(TMM.y).ravel())
         mu_data = f_real(self.AC.freq).ravel() + 1j*f_imag(self.AC.freq).ravel()
         self.mu[domain_index] = mu_data
         
+        if TMM.rhoc.any != None:
+            f_real = interpolate.interp1d(TMM.freq.ravel(),np.real(TMM.rhoc).ravel())
+            f_imag = interpolate.interp1d(TMM.freq.ravel(),np.imag(TMM.rhoc).ravel())
+            rhoc_data = f_real(self.AC.freq).ravel() + 1j*f_imag(self.AC.freq).ravel()
+            self.rhoc[domain_index] = rhoc_data
+        if TMM.cc.any != None:
+            f_real = interpolate.interp1d(TMM.freq.ravel(),np.real(TMM.cc).ravel())
+            f_imag = interpolate.interp1d(TMM.freq.ravel(),np.imag(TMM.cc).ravel())
+            cc_data = f_real(self.AC.freq).ravel() + 1j*f_imag(self.AC.freq).ravel()
+            self.cc[domain_index] = cc_data
+            
+    def fluid(self,domain_index,cc,rhoc):
+        """
         
+
+        Parameters
+        ----------
+        domain_index : int
+            DESCRIPTION.
+        cc : complex128
+            DESCRIPTION.
+        rhoc : complex128
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        self.rhoc[domain_index] = (np.ones_like(self.AC.freq,dtype = complex)*rhoc).ravel()
+        self.cc[domain_index] = (np.ones_like(self.AC.freq,dtype = complex)*cc).ravel()
+        
+            
     def delany(self,domain_index=None,RF=10900,d=None,model='delany-bazley'):
     
         """

@@ -27,3 +27,6 @@ Transfinite Surface {4};
 Transfinite Surface {6};
 //+
 Transfinite Surface {10};
+//+
+SetFactory("OpenCASCADE");
+Box(2) = {-1, 0.5, 2.2, 2, 2, 0.5};

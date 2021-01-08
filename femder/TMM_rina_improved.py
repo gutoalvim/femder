@@ -47,10 +47,13 @@ class TMM:
         self.z_normal = None  # Only used for plotting when incidence == 'diffuse'
         self.s0 = 1  # Device front termination area
         self.srad = 1  # Device rear termination area
+        self.rhoc = None
+        self.cc = None
         self.matrix = {}
         self.air_prop = self.air_properties()
         self.project_folder = project_folder
         self.incidence = incidence
+
         if self.incidence == 'diffuse':
             self.incidence_angle = np.linspace(incidence_angle[0] + 0.01, incidence_angle[1] - 0.01,
                                                int((incidence_angle[1] - incidence_angle[0]) / incidence_angle[2]))
@@ -78,6 +81,14 @@ class TMM:
     @property
     def z_norm(self):
         return self.z / self.z0
+    
+    # @property
+    # def rhoc(self):
+    #     return self.rhoc
+
+    # @property
+    # def cc(self):
+    #     return self.cc
 
     @property
     def w0(self):
@@ -489,6 +500,40 @@ class TMM:
                               'model': model,
                               'matrix': Tp,
                               }
+    def porous_domain(self, sigma=27, model='miki',
+                     model_params={'warnings': 1, 'fibre_type': 2}):
+        """
+        Adds a domain of porous material to the existing device.
+
+        Inputs:s
+         - sigma: flow resistivity [k*Pa*s/m²]
+         - model: str, chooses between the available equivalent homogenous fluid models
+         - model_params: dict containing extra parameters for each model (if needed)
+         - incidence_angle: not implemented yet
+        """
+
+        # Adjusting units
+         # Convert millimeters to meters
+        sigma_k = sigma * 1000  # Convert to kilo rayls/m
+
+        if model == 'miki':
+            kc, zc = self.miki(sigma_k)
+        elif model == 'db':
+            kc, zc = self.delany_bazley(sigma_k, warnings=model_params['warnings'])
+        elif model == 'komatsu':
+            kc, zc = self.komatsu(sigma_k)
+        elif model == 'wilson':
+            kc, zc = self.wilson(sigma_k)
+        elif model == 'mg' or model == 'mechel':
+            kc, zc = self.mechel_grundmann(sigma_k, fibre_type=model_params['fibre_type'],
+                                           warnings=model_params['warnings'])
+        elif model == 'mac' or model == 'allard':
+            kc, zc = self.allard_champoux(sigma_k)
+        elif model == 'pet' or model == 'PET' or model == 'polyester':
+            kc, zc = self.PET(sigma_k)
+
+        self.cc = (2*np.pi*self.freq)/kc
+        self.rhoc = zc/self.cc
 
     def air_layer(self, layer=None, t=5):
         """

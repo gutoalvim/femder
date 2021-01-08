@@ -23,6 +23,8 @@ warnings.filterwarnings("ignore")
 from contextlib import contextmanager
 import sys, os
 
+import femder as fd
+
 @contextmanager
 def suppress_stdout():
     with open(os.devnull, "w") as devnull:
@@ -32,6 +34,10 @@ def suppress_stdout():
             yield
         finally:
             sys.stdout = old_stdout
+            
+def rmse(predictions, targets):
+    return np.sqrt(((predictions - targets) ** 2).mean())
+            
 def fem_load(filename,ext='.pickle'):
     """
     Load FEM3D simulation
@@ -258,6 +264,31 @@ def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     Q = Q.tocsc()
     
     return H,Q
+@jit
+def assemble_Q_H_4_FAST_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,domain_index_vol,fi):
+
+    Hez = np.zeros([4,4,NumElemC],dtype='cfloat')
+    Qez = np.zeros([4,4,NumElemC],dtype='cfloat')
+    for e in range(NumElemC):
+        con = elem_vol[e,:]
+        coord_el = nos[con,:]
+        
+        He, Qe = int_tetra_4gauss(coord_el,c[domain_index_vol[e]][fi],rho[domain_index_vol[e]][fi])    
+        Hez[:,:,e] = He
+        Qez[:,:,e] = Qe
+    
+    NLB=np.size(Hez,1)
+    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
+    X = np.transpose(Y, (1, 0, 2))
+    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    
+    H = H.tocsc()
+    Q = Q.tocsc()
+    
+    return H,Q
+
+
 def assemble_Q_H_5_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
     Hez = np.zeros([4,4,NumElemC])
@@ -287,6 +318,26 @@ def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
         coord_el = nos[con,:]
         
         He, Qe = int_tetra10_4gauss(coord_el,c0,rho0)    
+        Hez[:,:,e] = He
+        Qez[:,:,e] = Qe
+    
+    NLB=np.size(Hez,1)
+    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
+    X = np.transpose(Y, (1, 0, 2))
+    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    H = H.tocsc()
+    Q = Q.tocsc()
+    return H,Q
+def assemble_Q_H_4_FAST_2order_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,domain_index_vol,fi):
+
+    Hez = np.zeros([10,10,NumElemC])
+    Qez = np.zeros([10,10,NumElemC])
+    for e in range(NumElemC):
+        con = elem_vol[e,:]
+        coord_el = nos[con,:]
+        
+        He, Qe = int_tetra10_4gauss(coord_el,c[domain_index_vol[e]][fi],rho[domain_index_vol[e]][fi])    
         Hez[:,:,e] = He
         Qez[:,:,e] = Qe
     
@@ -407,8 +458,8 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
 @jit
 def int_tetra_4gauss(coord_el,c0,rho0):
 
-    He = np.zeros([4,4])
-    Qe = np.zeros([4,4])
+    He = np.zeros([4,4],dtype='cfloat')
+    Qe = np.zeros([4,4],dtype='cfloat')
     
 # if npg == 1:
     #Pontos de Gauss para um tetraedro
@@ -698,7 +749,7 @@ class FEM3D:
         AC : AlgControls
             Defines frequency configuration for calculation.
         BC : BoundaryConditions()
-            BoundaryConditions object containg impedances for each assigned Physical Gropu in gmsh.
+            BoundaryConditions object containg impedances for each assigned Physical Group in gmsh.
 
         Returns
         -------
@@ -708,6 +759,9 @@ class FEM3D:
         self.BC= BC
         if BC != None:
             self.mu = BC.mu
+            self.v = BC.v
+        
+        
         #AirProperties
         self.freq = AC.freq
         self.w = AC.w
@@ -738,8 +792,28 @@ class FEM3D:
         self.pN = None
         self.F_n = None
         self.Vc = None
+        self.rho = {}
+        self.c = {}
         
-    def compute(self,timeit=True):
+        if len(self.BC.rhoc) > 0:
+            rhoc_keys=np.array([*self.BC.rhoc])[0]
+            rho0_keys = self.number_ID_vol
+            rho_list = np.setdiff1d(rho0_keys,rhoc_keys)
+            for i in rho_list:
+                self.rho[i] = np.ones_like(self.freq)*self.rho0
+                
+            self.rho.update(self.BC.rhoc)
+            
+        if len(self.BC.cc) > 0:
+            cc_keys=np.array([*self.BC.cc])[0]
+            c0_keys = self.number_ID_vol
+            cc_list = np.setdiff1d(c0_keys,cc_keys)
+            for i in cc_list:
+                self.c[i] = np.ones_like(self.freq)*self.c0
+                
+            self.c.update(self.BC.cc)
+
+    def compute(self,timeit=True,printless=True):
         """
         Computes acoustic pressure for every node in the mesh.
 
@@ -755,59 +829,145 @@ class FEM3D:
         """
         
         then = time.time()
-        if isinstance(self.c0, complex) or isinstance(self.rho0, complex):
-            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
-            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+        # if isinstance(self.c0, complex) or isinstance(self.rho0, complex):
+        #     self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+        #     self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
 
-        else:
-            self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
-            self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+        # else:
+        #     self.H = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
+        #     self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
         # self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype =  np.cfloat)
         self.q = np.zeros([self.NumNosC,1],dtype = np.cfloat)
         
-        if self.order == 1:
-            self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
-        elif self.order == 2:
-            self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
-        #Assemble A(Amortecimento)
-        if self.BC != None:
-
+        if len(self.rho) == 0:
             if self.order == 1:
-                self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
             elif self.order == 2:
-                self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
-            pN = []
-            
-            # print('Solving System')
-            for ii in range(len(self.S.coord)):
-                self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+            #Assemble A(Amortecimento)
+            if self.BC != None:
                 
-            self.q = csc_matrix(self.q)
-            for N in tqdm(range(len(self.freq))):
-                # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
-                # Ag = np.zeros_like(self.Q,dtype=np.cfloat)
+                if self.order == 1:
+                    self.A = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                    if len(self.v) > 0:
+                        self.V = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                
+                elif self.order == 2:
+                    self.A = assemble_A10_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                    if len(self.v) > 0:
+                        self.V = assemble_A10_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+
+                pN = []
+                
+                
+                # print('Solving System')
+                for ii in range(len(self.S.coord)):
+                    self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                    
+                self.q = csc_matrix(self.q)
+                if len(self.v) == 0:
+                    for N in tqdm(range(len(self.freq))):
+                        # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
+                        # Ag = np.zeros_like(self.Q,dtype=np.cfloat)
+                        i = 0
+                        Ag = 0
+                        for bl in self.number_ID_faces:
+                            Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
+                            i+=1
+                        G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
+                        b = -1j*self.w[N]*self.q 
+                        ps = spsolve(G,b)
+                        pN.append(ps)
+                if len(self.v) >0:
+                    
+                    for N in tqdm(range(len(self.freq))):
+                    # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
+                    # Ag = np.zeros_like(self.Q,dtype=np.cfloat)
+                        i = 0
+                        Ag = 0
+                        Vn = 0
+                        V = np.zeros([self.NumNosC,1],dtype = np.cfloat)
+                        
+                        for bl in np.sort([*self.mu]):
+                            Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
+                            i += 1
+                            
+                        i=0
+                        for bl in np.sort([*self.v]):
+                            indx = np.argwhere(self.domain_index_surf==bl)
+                            V[indx] = self.v[bl][N]
+                            Vn += self.V[i]*csc_matrix(V)
+                            i+=1
+                        G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
+                        b =  -1j*self.w[N]*Vn
+                        ps = spsolve(G,b)
+                        pN.append(ps)
+                self.A = Ag
+                # self.Vn = Vn
+            else:
+                pN = []
+                
+                
+                for ii in range(len(self.S.coord)):
+                    self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                    
+                self.q = csc_matrix(self.q)
                 i = 0
-                Ag = 0
-                for bl in self.number_ID_faces:
-                    Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
-                    i+=1
-                G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
-                b = -1j*self.w[N]*self.q
-                ps = spsolve(G,b)
-                pN.append(ps)
-                  
+                
+                for N in tqdm(range(len(self.freq))):
+                    G = self.H - (self.w[N]**2)*self.Q
+                    b = -1j*self.w[N]*self.q
+                    ps = spsolve(G,b)
+                    pN.append(ps) 
         else:
-            pN = []
-            
-            
-            for ii in range(len(self.S.coord)):
-                self.q[find_no(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
-            i = 0
-            for N in tqdm(range(len(self.freq))):
-                G = self.H - (self.w[N]**2)*self.Q
-                b = -1j*self.w[N]*self.q
-                ps = spsolve(G,b)
-                pN.append(ps) 
+            if self.BC != None:
+    
+                if self.order == 1:
+                    self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                elif self.order == 2:
+                    self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                pN = []
+                
+                # print('Solving System')
+                for ii in range(len(self.S.coord)):
+                    self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                    
+                self.q = csc_matrix(self.q)
+                for N in tqdm(range(len(self.freq))):
+                    # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
+                    # Ag = np.zeros_like(self.Q,dtype=np.cfloat)
+                    i = 0
+                    Ag = 0
+                    for bl in self.number_ID_faces:
+                        Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
+                        i+=1
+                    if self.order == 1:
+                        self.H,self.Q = assemble_Q_H_4_FAST_equifluid(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c,self.rho,self.domain_index_vol,N)
+                    elif self.order == 2:
+                        self.H,self.Q = assemble_Q_H_4_FAST_2order_equifluid(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c,self.rho,self.domain_index_vol,N)
+                    
+                    G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
+                    b = -1j*self.w[N]*self.q
+                    ps = spsolve(G,b)
+                    pN.append(ps)
+            else:
+                pN = []
+                
+                
+                for ii in range(len(self.S.coord)):
+                    self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                self.q = csc_matrix(self.q)
+                i = 0
+                for N in tqdm(range(len(self.freq))):
+                    if self.order == 1:
+                        self.H,self.Q = assemble_Q_H_4_FAST_equifluid(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c,self.rho,self.domain_index_vol,N)
+                    elif self.order == 2:
+                        self.H,self.Q = assemble_Q_H_4_FAST_2order_equifluid(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c,self.rho,self.domain_index_vol,N)
+                    
+                    G = self.H - (self.w[N]**2)*self.Q
+                    b = -1j*self.w[N]*self.q
+                    ps = spsolve(G,b)
+                    pN.append(ps) 
             
         self.pN = np.array(pN)
         self.t = time.time()-then
@@ -819,6 +979,79 @@ class FEM3D:
                 print(f'Time taken: {self.t/60} min')
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
+                
+    def optimize_source_receiver_pos(self,num_grid_pts,fmin=20,fmax=200,max_distance_from_wall=0.5,
+                                     minimum_distance_between_speakers=1.2,
+                                     plot_geom=False,renderer='notebook',plot_evaluate=False,
+                                     print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal']):
+        
+        sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,
+                                 max_distance_from_wall=max_distance_from_wall,
+                                 minimum_distance_between_speakers=minimum_distance_between_speakers)
+        
+        R_all = []
+        S_all = []
+        for i in range(len(rC)):
+            R_all.append(rC[i].coord)
+            S_all.append(sC[i].coord)
+        
+        S_all = np.vstack((np.array(S_all)[:,0,0,:],np.array(S_all)[:,1,0,:]))
+        R_all = np.array(R_all)[:,0,:]
+        
+        
+        self.R = fd.Receiver()
+        self.R.coord = R_all 
+        self.S = fd.Source()
+        self.S.coord = S_all
+        if plot_geom:
+            self.plot_problem(renderer=renderer,saveFig=saveFig,camera_angles=camera_angles)  
+        fom = []
+        
+        Grid = fd.GridImport3D(self.AP, self.path_to_geo,S=self.S,R=self.R,fmax = self.grid.fmax,num_freq = self.grid.num_freq)
+        self.nos = Grid.nos
+        self.elem_surf = Grid.elem_surf
+        self.elem_vol =  Grid.elem_vol
+        self.domain_index_surf =  Grid.domain_index_surf
+        self.domain_index_vol =Grid.domain_index_vol
+        self.number_ID_faces =Grid.number_ID_faces
+        self.number_ID_vol = Grid.number_ID_vol
+        self.NumNosC = Grid.NumNosC
+        self.NumElemC = Grid.NumElemC
+        self.order = Grid.order
+        
+        pOptim = []
+        fom = []
+        for i in range(len(rC)):
+            
+            self.R = rC[i]
+            self.S = sC[i]
+            self.compute(timeit=False)
+            pR = self.evaluate(self.R,False)
+            pR_mean = np.real(np.mean(p2SPL(pR),axis=1))
+            pOptim.append(pR)
+            fm = fd.fitness_metric(pR,self.AC,fmin,fmax)
+            
+            fom.append(np.real(fm))
+            
+            if plot_evaluate:
+                plt.semilogx(self.freq,pR_mean,label=f'{fm}')
+                plt.legend()
+                plt.xlabel('Frequency [Hz]')
+                plt.ylabel('SPL [dB]')
+                plt.grid()
+                plt.show()
+            
+        
+        min_indx = np.argmin(np.array(fom))
+        
+        if print_info:
+            print(f'Fitness Metric: {fom[min_indx]:.2f} \n Source Position: {sC[min_indx].coord:.2f} \n Receiver Position: {rC[min_indx].coord:.2f}')
+        
+        self.pOptim = [fom,np.array(pOptim)]
+        self.bestMetric = np.amin(fom)
+        
+        return self.pOptim
+            
     
     def eigenfrequency(self,neigs=12,near_freq=None,timeit=True):
         """
@@ -962,19 +1195,13 @@ class FEM3D:
     def modal_superposition(self,R):
         self.R = R
         Mn = np.diag(self.Vc.T@self.Q@self.Vc)
-        # print(Mn.shape)
-        self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype = np.complex128)
-        npg = 3
+
         if self.BC != None:
-            i = 0
-            for bl in self.number_ID_faces:
-                indx = np.argwhere(self.domain_index_surf==bl)
-                for es in range(len(self.elem_surf[indx])):
-                    con = self.elem_surf[indx[es],:][0]
-                    coord_el = self.nos[con,:]
-                    Ae = int_tri_impedance_simpl(coord_el, npg)
-                    self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
-                i += 1
+            if self.order == 1:
+                self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+            elif self.order == 2:
+                self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+            
                 
             indS = [] 
             indR = []
@@ -988,24 +1215,25 @@ class FEM3D:
             # print(qindS[1])
             pmN = [] # np.zeros_like(self.freq,dtype=np.complex128)
             for N in tqdm(range(len(self.freq))):
-                D = np.zeros_like(self.Q,dtype = np.complex128)
                 i = 0
-                
+                Ag = 0
                 for bl in self.number_ID_faces:
-                    D += self.A[:,:,i]*self.mu[bl][N]
+                    Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
                     i+=1
+                
                     
-                hn = np.diag(self.Vc.T@D@self.Vc)
-                # print(hn[0].shape)
+                hn = np.diag(self.Vc.T@Ag@self.Vc)
+                print(hn.shape)
                 An = 0 + 1j*0
                 for ir in range(len(indR)):
-                    for e in range(len(self.F_n)):
-                        for ii in range(len(indS)):
+                    for ii in range(len(indS)):
+                        for e in range(len(self.F_n)):
+                        
                             wn = self.F_n[e]*2*np.pi
                             # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
                             # print(((wn-self.w[N])*Mn[e]))
-                            An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e]/((wn-self.w[N])*Mn[e])#+1j*2*hn[e]*wn*self.w[N])
-                            # print(An)
+                            An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR[ir],e]/((wn-self.w[N])*Mn[e]+1j*hn[e]*self.w[N])
+                            # print(An.shape)
                     pmN.append(An[0][0])
                 
             self.pm = np.array(pmN)
@@ -1096,6 +1324,47 @@ class FEM3D:
                 self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
         return self.pR
     
+    def evaluate_physical_group(self,domain_index,average=True,plot=False):
+        """
+        Evaluates pressure at a given receiver coordinate, for best results, include receiver
+        coordinates as nodes in mesh, by passing Receiver() in GridImport3D().
+
+        Parameters
+        ----------
+        domain_index : List / Int()
+            physical groups to be evaluated
+        plot : Bool, optional
+            Plots SPL for given nodes, if len(R)>1, also plots average. The default is False.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+        
+        
+        self.pR = np.zeros([len(self.freq),len(domain_index)],dtype = np.complex128)
+        if plot:
+            plt.style.use('seaborn-notebook')
+            plt.figure(figsize=(5*1.62,5))
+                # linest = ':'
+            i = 0
+            for bl in domain_index:
+                indx = np.array(np.argwhere(self.domain_index_surf==bl))
+                # print(indx)
+                self.pR[:,i] = np.mean(p2SPL(self.pN[:,indx][:,:,0]),axis=1)
+
+                
+                plt.semilogx(self.freq,self.pR[:,i],label=f'Average - Physical Group: {i}',linewidth = 5)
+                i+=1
+            plt.grid()
+            plt.legend()
+            plt.xlabel('Frequency[Hz]')
+            plt.ylabel('SPL [dB]')
+            # plt.show()
+        return self.pR
+    
         
     def surf_evaluate(self,freq,renderer='notebook',d_range = 45):
         """
@@ -1151,7 +1420,7 @@ class FEM3D:
  
         ))  
 
-
+        fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
         import plotly.io as pio
         pio.renderers.default = renderer
         fig.show()
@@ -1222,9 +1491,9 @@ class FEM3D:
             fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
                                'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
         if saveFig:
-            folderCheck = os.path.exists('/Layout')
-            if folderCheck is False:
-                os.mkdir('/Layout')
+            # folderCheck = os.path.exists('/Layout')
+            # if folderCheck is False:
+            #     os.mkdir('/Layout')
             if filename is None:
                 for camera in camera_angles:
                     if camera == 'top' or camera == 'floorplan':

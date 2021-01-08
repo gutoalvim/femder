@@ -71,7 +71,8 @@ class GridImport3D:
         import sys
         import os
         filename, file_extension = os.path.splitext(path_to_geo)
-        if path_to_geo == '.geo' or '.brep':
+        # print(file_extension)
+        if file_extension == '.geo' or file_extension == '.geo_unrolled' or file_extension == '.brep':
             gmsh.initialize(sys.argv)
             gmsh.open(self.path_to_geo) # Open msh
     
@@ -80,7 +81,7 @@ class GridImport3D:
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.scale)/self.fmax/self.num_freq)
             
-    
+            # print((self.c0*self.scale)/self.fmax/self.num_freq)
             lc = 0#(self.c0*self.scale)/self.fmax/self.num_freq
             tg = gmsh.model.occ.getEntities(3)
             # tg2 = gmsh.model.occ.getEntities(2)
@@ -135,9 +136,9 @@ class GridImport3D:
             
             vas = np.argsort(va)
             self.domain_index_surf = vpg[vas] 
-            
+            # print(vas)            
             pgv = gmsh.model.getPhysicalGroups(3)
-            
+            # print(pgv)
             vav= []
             vpgv = []
             for i in range(len(pgv)):
@@ -146,11 +147,11 @@ class GridImport3D:
                     # print(v[ii])
                     vvv = gmsh.model.mesh.getElements(3,vv[ii])[1][0]
                     pgones = np.ones_like(vvv)*pgv[i][1]
-                    vavsv = np.hstack((vav,vvv))
+                    vav = np.hstack((vav,vvv))
                     # print(pgones)
                     vpgv = np.hstack((vpgv,pgones))
             
-            vasv = np.argsort(vavsv)
+            vasv = np.argsort(vav)
             self.domain_index_vol = vpgv[vasv]
             # gmsh.model.mesh.optimize()
             gmsh.model.occ.synchronize()
@@ -164,8 +165,8 @@ class GridImport3D:
             self.model = gmsh.model
             gmsh.finalize() 
             
-            msh = meshio.read(path_name+'/current_mesh2.vtk')
-        elif file_extension=='.msh' or 'vtk':
+            # msh = meshio.read(path_name+'/current_mesh2.vtk')
+        elif file_extension=='.msh' or file_extension=='vtk':
             msh = meshio.read(path_to_geo)
             
             self.msh = msh
@@ -177,10 +178,10 @@ class GridImport3D:
                 self.elem_surf = msh.cells_dict["triangle"]
                 self.elem_vol = msh.cells_dict["tetra"]
                 
-                self.domain_index_surf = msh.cell_data_dict["CellEntityIds"]["triangle"]
-                self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra"]
-                # self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
-                # self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
+                # self.domain_index_surf = msh.cell_data_dict["CellEntityIds"]["triangle"]
+                # self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra"]
+                self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
+                self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
             # elif order == 2:
             #     self.elem_surf = msh.cells_dict["triangle6"]
             #     self.elem_vol = msh.cells_dict["tetra10"]
