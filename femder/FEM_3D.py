@@ -106,6 +106,26 @@ def fem_load(filename,ext='.pickle'):
     obj.q = simulation_data['q']
     print('FEM loaded successfully.')
     return obj
+
+def SBIR_SPL(complex_pressure,AC,fmin,fmax):
+    fs = 44100
+    
+    fmin_indx = np.argwhere(AC.freq==fmin)[0][0]
+    fmax_indx = np.argwhere(AC.freq==fmax)[0][0]
+
+    
+    df = (AC.freq[-1]-AC.freq[0])/len(AC.freq)
+    
+    ir_duration = 1/df
+    
+    ir = fd.IR(fs,ir_duration,fmin,fmax).compute_room_impulse_response(complex_pressure.ravel())
+    t_ir = np.linspace(0,ir_duration,len(ir))
+    sbir = fd.SBIR(ir,t_ir,AC.freq[0],AC.freq[-1],method='peak')
+    sbir_freq = sbir[1]
+    sbir_SPL = p2SPL(sbir_freq)[fmin_indx:fmax_indx]
+    sbir_freq = np.linspace(fmin,fmax,len(sbir_SPL))
+    
+    return sbir_freq,sbir_SPL
 @jit
 def coord_interpolation(nos,elem_vol,coord,pN):
     coord = np.array(coord)
@@ -730,6 +750,8 @@ def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     ps = spsolve(G,b)
     return ps
 
+def solve_modal_superposition(AC,F_n,Vc):
+    pass
     
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
@@ -980,9 +1002,9 @@ class FEM3D:
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
                 
-    def optimize_source_receiver_pos(self,num_grid_pts,fmin=20,fmax=200,max_distance_from_wall=0.5,
-                                     minimum_distance_between_speakers=1.2,
-                                     plot_geom=False,renderer='notebook',plot_evaluate=False,
+    def optimize_source_receiver_pos(self,num_grid_pts,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
+                                     minimum_distance_between_speakers=1.2,neigs=50,
+                                     plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
                                      print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal']):
         
         sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,
@@ -1003,6 +1025,7 @@ class FEM3D:
         self.R.coord = R_all 
         self.S = fd.Source()
         self.S.coord = S_all
+        
         if plot_geom:
             self.plot_problem(renderer=renderer,saveFig=saveFig,camera_angles=camera_angles)  
         fom = []
@@ -1019,36 +1042,59 @@ class FEM3D:
         self.NumElemC = Grid.NumElemC
         self.order = Grid.order
         
+        self.pOptim = []
         pOptim = []
         fom = []
-        for i in range(len(rC)):
+        if method != 'None':
+            if method == 'modal':
+                self.eigenfrequency(neigs)
+            for i in range(len(rC)):
+                
+                self.R = rC[i]
+                self.S = sC[i]
+                if method == 'direct':
+                    self.compute(timeit=False)
+                    pR = self.evaluate(self.R,False)
+                elif method == 'modal':
+                    pR = self.modal_superposition(self.R)
+                pR_mean = np.real(p2SPL(pR))
+                pOptim.append(pR)
+                fm = fd.fitness_metric(pR,self.AC,fmin,fmax)
+                
+                fom.append(np.real(fm))
+                
+                if plot_evaluate:
+                    plt.semilogx(self.freq,pR_mean,label=f'{fm}')
+                    plt.legend()
+                    plt.xlabel('Frequency [Hz]')
+                    plt.ylabel('SPL [dB]')
+                    plt.grid()
+                    plt.show()
+                
             
-            self.R = rC[i]
-            self.S = sC[i]
-            self.compute(timeit=False)
-            pR = self.evaluate(self.R,False)
-            pR_mean = np.real(np.mean(p2SPL(pR),axis=1))
-            pOptim.append(pR)
-            fm = fd.fitness_metric(pR,self.AC,fmin,fmax)
             
-            fom.append(np.real(fm))
+            min_indx = np.argmin(np.array(fom))
             
-            if plot_evaluate:
-                plt.semilogx(self.freq,pR_mean,label=f'{fm}')
+            if plotBest:
+                
+                plt.semilogx(self.freq,np.real(p2SPL(pOptim[min_indx])),label='Total')
+                sbir_freq,pR_sbir = SBIR_SPL(pOptim[min_indx],self.AC,fmin,fmax)
+                plt.semilogx(sbir_freq,pR_sbir,label='SBIR')
+                
                 plt.legend()
                 plt.xlabel('Frequency [Hz]')
                 plt.ylabel('SPL [dB]')
+                plt.title(f'Fitness: {fm:.3f}')
                 plt.grid()
                 plt.show()
+                
+            if print_info:
+                print(f'Fitness Metric: {fom[min_indx]:.2f} \n Source Position: {sC[min_indx].coord:.2f} \n Receiver Position: {rC[min_indx].coord:.2f}')
             
-        
-        min_indx = np.argmin(np.array(fom))
-        
-        if print_info:
-            print(f'Fitness Metric: {fom[min_indx]:.2f} \n Source Position: {sC[min_indx].coord:.2f} \n Receiver Position: {rC[min_indx].coord:.2f}')
-        
-        self.pOptim = [fom,np.array(pOptim)]
-        self.bestMetric = np.amin(fom)
+            self.R = rC[min_indx]
+            self.S.coord = sC[min_indx].coord[:,0,:]
+            self.pOptim = [fom,np.array(pOptim)]
+            self.bestMetric = np.amin(fom)
         
         return self.pOptim
             
@@ -1150,17 +1196,17 @@ class FEM3D:
         fn = np.sqrt(wc)/(2*np.pi)
         
         self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype = np.complex128)
-        npg = 3
         if self.BC != None:
-            i = 0
-            for bl in self.number_ID_faces:
-                indx = np.argwhere(self.domain_index_surf==bl)
-                for es in range(len(self.elem_surf[indx])):
-                    con = self.elem_surf[indx[es],:][0]
-                    coord_el = self.nos[con,:]
-                    Ae = int_tri_impedance_simpl(coord_el,npg)
-                    self.A[con[:,np.newaxis],con,i] = self.A[con[:,np.newaxis],con,i] + Ae
-                i += 1
+            if self.order == 1:
+                self.A = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                if len(self.v) > 0:
+                    self.V = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+            
+            elif self.order == 2:
+                self.A = assemble_A10_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                if len(self.v) > 0:
+                    self.V = assemble_A10_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+
         
         fcn = np.zeros_like(fn,dtype=np.complex128)
         for icc in tqdm(range(len(fn))):
@@ -1168,16 +1214,16 @@ class FEM3D:
             i = 0
             idxF = find_nearest(self.freq,fn[icc])
             # print(idxF)
+            i = 0
+            Ag = 0
             for bl in self.number_ID_faces:
-                Ag += self.A[:,:,i]*self.mu[bl][idxF]#/(self.rho0*self.c0)
-                # print((self.rho0*self.c0)*self.mu[bl][idxF])
+                Ag += self.A[i]*self.mu[bl].ravel()[idxF]#/(self.rho0*self.c0)
                 i+=1
             wn = 2*np.pi*fn[icc]
             HA = self.H + 1j*wn*Ag
-            Ga = inv(self.Q)@(HA)
+            Ga = spsolve(self.Q,HA)
             [wcc,Vcc] = eigs(Ga,neigs,which='SM')
             fnc = np.sqrt(wcc)/(2*np.pi)
-            print(fnc)
             indfn = find_nearest(np.real(fnc), fn[icc])
             fcn[icc] = fnc[indfn]
         self.F_n = fcn
@@ -1207,10 +1253,10 @@ class FEM3D:
             indR = []
             qindS = []
             for ii in range(len(self.S.coord)): 
-                indS.append(find_no(self.nos,self.S.coord[ii,:]))
+                indS.append(closest_node(self.nos,self.S.coord[ii,:]))
                 qindS.append(self.S.q[ii].ravel())  
             for ii in range(len(self.R.coord)): 
-                indR.append([find_no(self.nos,self.R.coord[ii,:])])
+                indR.append([closest_node(self.nos,self.R.coord[ii,:])])
                 
             # print(qindS[1])
             pmN = [] # np.zeros_like(self.freq,dtype=np.complex128)
@@ -1223,7 +1269,7 @@ class FEM3D:
                 
                     
                 hn = np.diag(self.Vc.T@Ag@self.Vc)
-                print(hn.shape)
+                # print(hn)
                 An = 0 + 1j*0
                 for ir in range(len(indR)):
                     for ii in range(len(indS)):
@@ -1232,9 +1278,9 @@ class FEM3D:
                             wn = self.F_n[e]*2*np.pi
                             # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
                             # print(((wn-self.w[N])*Mn[e]))
-                            An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR[ir],e]/((wn-self.w[N])*Mn[e]+1j*hn[e]*self.w[N])
-                            # print(An.shape)
-                    pmN.append(An[0][0])
+                            An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR[ir],e]/((wn**2-self.w[N]**2)*Mn[e]+1j*hn[e]*self.w[N])
+                            
+                    pmN.append(An[0])
                 
             self.pm = np.array(pmN)
             
@@ -1307,7 +1353,7 @@ class FEM3D:
             else:
                 linest = '-'
             for i in range(len(self.R.coord)):
-                self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+                self.pR[:,i] = self.pN[:,closest_node(self.nos,R.coord[i,:])]
                 # self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
                 plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[i,:]}m')
                 
@@ -1321,7 +1367,7 @@ class FEM3D:
             # plt.show()
         else:
             for i in range(len(self.R.coord)):
-                self.pR[:,i] = self.pN[:,find_no(self.nos,R.coord[i,:])]
+                self.pR[:,i] = self.pN[:,closest_node(self.nos,R.coord[i,:])]
         return self.pR
     
     def evaluate_physical_group(self,domain_index,average=True,plot=False):

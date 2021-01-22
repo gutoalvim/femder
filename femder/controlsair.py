@@ -98,7 +98,7 @@ class AlgControls():
         '''
         # config = load_cfg(config_file)
         freq_vec = np.array(freq_vec)
-        c0 = AP.c0
+        self.c0 = AP.c0
         if freq_vec.size == 0:
             self.freq_init = np.array(freq_init)
             self.freq_end = np.array(freq_end)
@@ -109,7 +109,7 @@ class AlgControls():
             self.freq_end = np.array(freq_vec[-1])
             self.freq = freq_vec
         self.w = 2.0 * np.pi * self.freq
-        self.k0 = self.w / c0
+        self.k0 = self.w / self.c0
         self.fcenter = self.freq
 
     def third_octave_fvec(self,fcentermin=100,fcentermax=2000,nperoct=1):
@@ -132,6 +132,8 @@ class AlgControls():
             fvec = np.concatenate((fvec,ff),axis=0)
             
         self.freq = fvec
+        self.w = fvec*2*np.pi
+        self.k0 = self.w//self.c0
         
         if nperoct==1:
             self.freq = fcenter

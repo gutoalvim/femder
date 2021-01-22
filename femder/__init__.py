@@ -15,3 +15,4 @@ from femder.receivers import Receiver
 from femder.GeometryGenerate import GeometryGenerator
 from femder.optimization_helpers import r_s_for_room, r_s_positions,r_s_from_grid,fitness_metric
 from femder.utils import IR, SBIR
+from femder.BEM_3D import BEM3D
