@@ -451,8 +451,9 @@ def bem_t3_post(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights,detJa,xg,yg
     c1=-xdis/(4*np.pi*dis**2)*(1/dis);
     c2=-ydis/(4*np.pi*dis**2)*(1/dis);
     c3=-zdis/(4*np.pi*dis**2)*(1/dis);
-    cn = np.array([[c1[0],c1[1],c1[2]],[c2[0],c2[1],c2[2]],[c3[0],c3[1],c3[2]]],dtype=np.complex128)
+    cn = np.array([[c1[0],c1[1],c1[2]],[c2[0],c2[1],c2[2]],[c3[0],c3[1],c3[2]]],dtype=np.complex128).T
     cc=np.dot(cn,n.T); 
+    # print(cc)
     Ce[0]=np.sum(np.sum(-cc*N[:,0]*detJa*weights)*weights); 
     Ce[1]=np.sum(np.sum(-cc*N[:,1]*detJa*weights)*weights); 
     Ce[2]=np.sum(np.sum(-cc*N[:,2]*detJa*weights)*weights); 
@@ -698,6 +699,7 @@ class BEM3D:
         self.normals = compute_normals(self.nos, self.elem_surf)
         self.areas= compute_areas(self.nos, self.elem_surf)
         self.interp = 'linear'
+        self.coloc_cre = 'integ'
         
 
     def compute(self,timeit=True,printless=True):
@@ -727,8 +729,12 @@ class BEM3D:
                 pC,info = gmres((C-I),(Pi))
             elif self.interp == 'linear':
                 Gs,I,Cc,Pi = assemble_bem_3gauss_prepost(self.elem_surf,self.nos,self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
-                # C = np.eye(len(self.nos)) - Cc
-                C = 0.5*np.eye(len(self.nos))
+                
+                if self.coloc_cte == 'cte':
+                    C = 0.5*np.eye(len(self.nos))
+                elif self.coloc_cte == 'integ':
+                    C = np.eye(len(self.nos)) - Cc
+                # C = 0.5*np.eye(len(self.nos))
                 pC,info = gmres((C+I),(Pi))
                 
             if info != 0:

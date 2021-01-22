@@ -91,7 +91,7 @@ def r_s_positions(grid,grid_pts,bias):
         So.append(S)
     return So,Ro
 
-def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distance_from_wall=0.6):
+def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distance_from_wall=0.6,speaker_receiver_height=1.2):
     
     ymax = np.amax(grid.nos[:,1])
     
@@ -100,13 +100,13 @@ def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distan
     
     y_space = np.linspace(y_start,y_end,grid_pts[1])
     
-    y_height = 1.2
+    y_height = speaker_receiver_height
     a = grid.nos
     xmax = []
     for i in y_space:
         
         b = a[(a[:,2]>y_height*.8) & (a[:,2]<y_height*1.2)]
-        b = b[(b[:,1]>i*.8) & (b[:,1]<i*1.2)]
+        b = b[(b[:,1]>i*.8) & (b[:,1]<i*speaker_receiver_height)]
         xmax.append(np.amax(b[:,0]))
     
     xmax = np.array(xmax)
@@ -125,8 +125,8 @@ def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distan
     for i in range(grid_pts[0]):
         x_spacei = x_space[:,i]
         for ii in range(grid_pts[1]):
-            s_coords_L.append([x_spacei[i],y_space[ii],1.2])
-            r_coords.append([0,(y_space[ii])-np.cos(np.deg2rad(30))*x_spacei[i]*2,1.21])
+            s_coords_L.append([x_spacei[i],y_space[ii],speaker_receiver_height])
+            r_coords.append([0,(y_space[ii])-np.cos(np.deg2rad(30))*x_spacei[i]*2,speaker_receiver_height])
      
         
     s_coords_L = np.array(s_coords_L)

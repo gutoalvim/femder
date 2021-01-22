@@ -1003,13 +1003,13 @@ class FEM3D:
                 print(f'Time taken: {self.t/60} min')
                 
     def optimize_source_receiver_pos(self,num_grid_pts,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
-                                     minimum_distance_between_speakers=1.2,neigs=50,
+                                     minimum_distance_between_speakers=1.2,speaker_receiver_height=1.2,neigs=50,
                                      plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
                                      print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal']):
         
         sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,
                                  max_distance_from_wall=max_distance_from_wall,
-                                 minimum_distance_between_speakers=minimum_distance_between_speakers)
+                                 minimum_distance_between_speakers=minimum_distance_between_speakers,speaker_receiver_height = speaker_receiver_height)
         
         R_all = []
         S_all = []
