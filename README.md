@@ -3,7 +3,7 @@ A Finite Element Method (FEM) code for acoustics written for my undergraduate cl
 
 # Dependencies
 
-numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
+numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle geneticalgorithm
 
 # How to Install on Windows
 
@@ -21,7 +21,7 @@ Python 3.6 is HIGHLY reccomended, so you can make use of scikit-umfpack to accel
 
 $conda install git
 
-$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle
+$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle geneticalgorithm
 
 $pip install scikit-umfpack==0.3.1
 
