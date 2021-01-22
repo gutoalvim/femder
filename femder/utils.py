@@ -260,7 +260,7 @@ def SBIR(IR, t_IR, fmin, fmax, winCheck=False, spectraCheck=False, ms=32, method
         peak = detect_peaks(IR, mph=(max(IR) * 0.9), threshold=0, edge='rising', show=False)
         if len(peak) > 1:
             peak = peak[0]
-            print('More than one peak at the IR')
+            # print('More than one peak at the IR')
         #        ind[x] = 0; # Window max from the beginning
         dt = (max(t_IR) / len(t_IR))  # Time axis resolution
         tt_ms = round((ms / 1000) / dt)  # Number of samples equivalent to 64 ms
