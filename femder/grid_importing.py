@@ -63,7 +63,7 @@ class GridImport3D:
         self.num_freq = num_freq
         self.scale = scale
         self.order = order
-    
+        self.path_to_geo_unrolled = None
         self.c0 = np.real(AP.c0)
     
         import meshio

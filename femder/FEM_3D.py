@@ -809,6 +809,8 @@ class FEM3D:
             self.NumElemC = Grid.NumElemC
             self.order = Grid.order
             self.path_to_geo = Grid.path_to_geo
+            # if Grid.path_to_geo_unrolled != None:
+            self.path_to_geo_unrolled = Grid.path_to_geo_unrolled
         self.npg = 4
         self.pR = None
         self.pN = None
@@ -1605,9 +1607,14 @@ class FEM3D:
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", gridsize * 0.95)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", gridsize)
         # model = self.model
-        
-        filename, file_extension = os.path.splitext(self.path_to_geo)
-        path_name = os.path.dirname(self.path_to_geo)
+        if self.path_to_geo_unrolled != None:
+            path_to_geo = self.path_to_geo_unrolled
+        else:
+            path_to_geo = self.path_to_geo
+            
+        print(path_to_geo)
+        filename, file_extension = os.path.splitext(path_to_geo)
+        path_name = os.path.dirname(path_to_geo)
         tgv = gmsh.model.getEntities(3)
         # ab = gmsh.model.getBoundingBox(3, tgv[0][1])
     
@@ -1629,106 +1636,106 @@ class FEM3D:
     
         if coord_axis['boundary'] is None:
             coord_axis['boundary'] = (zmin + zmax) / 2
-        with suppress_stdout():
-            if 'xy' in axis:
-                gmsh.clear()
-                gmsh.open(self.path_to_geo)
-                tgv = gmsh.model.getEntities(3)
-                gmsh.model.occ.addPoint(xmin, ymin, coord_axis['xy'], 0., 3001)
-                gmsh.model.occ.addPoint(xmax, ymin, coord_axis['xy'], 0., 3002)
-                gmsh.model.occ.addPoint(xmax, ymax, coord_axis['xy'], 0., 3003)
-                gmsh.model.occ.addPoint(xmin, ymax, coord_axis['xy'], 0., 3004)
-                gmsh.model.occ.addLine(3001, 3004, 3001)
-                gmsh.model.occ.addLine(3004, 3003, 3002)
-                gmsh.model.occ.addLine(3003, 3002, 3003)
-                gmsh.model.occ.addLine(3002, 3001, 3004)
-                gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
-                gmsh.model.occ.addPlaneSurface([15000], 15000)
-                gmsh.model.addPhysicalGroup(2, [15000], 15000)
-        
-                gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
-        
-                # gmsh.model.occ.dilate([(2, 15000)],
-                #                       (xmin + xmax) / 2, (ymin + ymax) / 2, coord_axis['xy'],
-                #                       dilate_amount, dilate_amount, dilate_amount)
-                gmsh.model.occ.synchronize()
-                gmsh.model.mesh.generate(2)
-                vtags, vxy, _ = gmsh.model.mesh.getNodes()
-                nxy = vxy.reshape((-1, 3))
-                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
-                nxysurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
-        
-            if 'yz' in axis:
-                gmsh.clear()
-                gmsh.open(self.path_to_geo)
-                tgv = gmsh.model.getEntities(3)
-                gmsh.model.occ.addPoint(coord_axis['yz'], ymin, zmin, 0., 3001)
-                gmsh.model.occ.addPoint(coord_axis['yz'], ymax, zmin, 0., 3002)
-                gmsh.model.occ.addPoint(coord_axis['yz'], ymax, zmax, 0., 3003)
-                gmsh.model.occ.addPoint(coord_axis['yz'], ymin, zmax, 0., 3004)
-                gmsh.model.occ.addLine(3001, 3004, 3001)
-                gmsh.model.occ.addLine(3004, 3003, 3002)
-                gmsh.model.occ.addLine(3003, 3002, 3003)
-                gmsh.model.occ.addLine(3002, 3001, 3004)
-                gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
-                gmsh.model.occ.addPlaneSurface([15000], 15000)
-                gmsh.model.addPhysicalGroup(2, [15000], 15000)
-        
-                gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
-        
-                # gmsh.model.occ.dilate([(2, 15000)],
-                #                       coord_axis['yz'], (ymin + ymax) / 2, coord_axis['boundary'],
-                #                       dilate_amount, dilate_amount, dilate_amount)
-                gmsh.model.occ.synchronize()
-                gmsh.model.mesh.generate(2)
-                # gmsh.write(path_name + 'current_field_yz.msh')
-                # gmsh.write(outputs + 'current_field_yz.brep')
-                vtags, vyz, _ = gmsh.model.mesh.getNodes()
-                nyz = vyz.reshape((-1, 3))
-                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
-                nyzsurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
-                
-        
-            if 'xz' in axis:
-                gmsh.clear()
-                gmsh.open(self.path_to_geo)
-                tgv = gmsh.model.getEntities(3)
-                gmsh.model.occ.addPoint(xmin, coord_axis['xz'], zmin, 0., 3001)
-                gmsh.model.occ.addPoint(xmax, coord_axis['xz'], zmin, 0., 3002)
-                gmsh.model.occ.addPoint(xmax, coord_axis['xz'], zmax, 0., 3003)
-                gmsh.model.occ.addPoint(xmin, coord_axis['xz'], zmax, 0., 3004)
-                gmsh.model.occ.addLine(3001, 3004, 3001)
-                gmsh.model.occ.addLine(3004, 3003, 3002)
-                gmsh.model.occ.addLine(3003, 3002, 3003)
-                gmsh.model.occ.addLine(3002, 3001, 3004)
-                gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
-                gmsh.model.occ.addPlaneSurface([15000], 15000)
-                gmsh.model.addPhysicalGroup(2, [15000], 15000)
-        
-                gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
-        
-                # gmsh.model.occ.dilate([(2, 15000)],
-                #                       (xmin + xmax) / 2, coord_axis['xz'], (zmin + zmax) / 2,
-                #                       dilate_amount, dilate_amount, dilate_amount)
-                gmsh.model.occ.synchronize()
-                gmsh.model.mesh.generate(2)
-                vtags, vxz, _ = gmsh.model.mesh.getNodes()
-                nxz = vxz.reshape((-1, 3))
-                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
-                nxzsurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
-        
-            # if view_planes:
-            #     gmsh.clear()
-            #     gmsh.merge(outputs + 'current_mesh.brep')
-            #     gmsh.merge(outputs + 'boundary_field.brep')
-            #     gmsh.merge(outputs + 'current_field_xy.brep')
-            #     gmsh.merge(outputs + 'current_field_yz.brep')
-            #     gmsh.merge(outputs + 'current_field_xz.brep')
-            #     gmsh.model.mesh.generate(2)
-            #     gmsh.model.occ.synchronize()
-            #     gmsh.fltk.run()
-            gmsh.finalize()
+        # with suppress_stdout():
+        if 'xy' in axis:
+            gmsh.clear()
+            gmsh.open(path_to_geo)
+            tgv = gmsh.model.getEntities(3)
+            gmsh.model.occ.addPoint(xmin, ymin, coord_axis['xy'], 0., 3001)
+            gmsh.model.occ.addPoint(xmax, ymin, coord_axis['xy'], 0., 3002)
+            gmsh.model.occ.addPoint(xmax, ymax, coord_axis['xy'], 0., 3003)
+            gmsh.model.occ.addPoint(xmin, ymax, coord_axis['xy'], 0., 3004)
+            gmsh.model.occ.addLine(3001, 3004, 3001)
+            gmsh.model.occ.addLine(3004, 3003, 3002)
+            gmsh.model.occ.addLine(3003, 3002, 3003)
+            gmsh.model.occ.addLine(3002, 3001, 3004)
+            gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
+            gmsh.model.occ.addPlaneSurface([15000], 15000)
+            gmsh.model.addPhysicalGroup(2, [15000], 15000)
     
+            gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
+    
+            # gmsh.model.occ.dilate([(2, 15000)],
+            #                       (xmin + xmax) / 2, (ymin + ymax) / 2, coord_axis['xy'],
+            #                       dilate_amount, dilate_amount, dilate_amount)
+            gmsh.model.occ.synchronize()
+            gmsh.model.mesh.generate(2)
+            vtags, vxy, _ = gmsh.model.mesh.getNodes()
+            nxy = vxy.reshape((-1, 3))
+            elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+            nxysurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+    
+        if 'yz' in axis:
+            gmsh.clear()
+            gmsh.open(path_to_geo)
+            tgv = gmsh.model.getEntities(3)
+            gmsh.model.occ.addPoint(coord_axis['yz'], ymin, zmin, 0., 3001)
+            gmsh.model.occ.addPoint(coord_axis['yz'], ymax, zmin, 0., 3002)
+            gmsh.model.occ.addPoint(coord_axis['yz'], ymax, zmax, 0., 3003)
+            gmsh.model.occ.addPoint(coord_axis['yz'], ymin, zmax, 0., 3004)
+            gmsh.model.occ.addLine(3001, 3004, 3001)
+            gmsh.model.occ.addLine(3004, 3003, 3002)
+            gmsh.model.occ.addLine(3003, 3002, 3003)
+            gmsh.model.occ.addLine(3002, 3001, 3004)
+            gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
+            gmsh.model.occ.addPlaneSurface([15000], 15000)
+            gmsh.model.addPhysicalGroup(2, [15000], 15000)
+    
+            gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
+    
+            # gmsh.model.occ.dilate([(2, 15000)],
+            #                       coord_axis['yz'], (ymin + ymax) / 2, coord_axis['boundary'],
+            #                       dilate_amount, dilate_amount, dilate_amount)
+            gmsh.model.occ.synchronize()
+            gmsh.model.mesh.generate(2)
+            # gmsh.write(path_name + 'current_field_yz.msh')
+            # gmsh.write(outputs + 'current_field_yz.brep')
+            vtags, vyz, _ = gmsh.model.mesh.getNodes()
+            nyz = vyz.reshape((-1, 3))
+            elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+            nyzsurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+            
+    
+        if 'xz' in axis:
+            gmsh.clear()
+            gmsh.open(path_to_geo)
+            tgv = gmsh.model.getEntities(3)
+            gmsh.model.occ.addPoint(xmin, coord_axis['xz'], zmin, 0., 3001)
+            gmsh.model.occ.addPoint(xmax, coord_axis['xz'], zmin, 0., 3002)
+            gmsh.model.occ.addPoint(xmax, coord_axis['xz'], zmax, 0., 3003)
+            gmsh.model.occ.addPoint(xmin, coord_axis['xz'], zmax, 0., 3004)
+            gmsh.model.occ.addLine(3001, 3004, 3001)
+            gmsh.model.occ.addLine(3004, 3003, 3002)
+            gmsh.model.occ.addLine(3003, 3002, 3003)
+            gmsh.model.occ.addLine(3002, 3001, 3004)
+            gmsh.model.occ.addCurveLoop([3004, 3001, 3002, 3003], 15000)
+            gmsh.model.occ.addPlaneSurface([15000], 15000)
+            gmsh.model.addPhysicalGroup(2, [15000], 15000)
+    
+            gmsh.model.occ.intersect(tgv, [(2, 15000)], 15000, True, True)
+    
+            # gmsh.model.occ.dilate([(2, 15000)],
+            #                       (xmin + xmax) / 2, coord_axis['xz'], (zmin + zmax) / 2,
+            #                       dilate_amount, dilate_amount, dilate_amount)
+            gmsh.model.occ.synchronize()
+            gmsh.model.mesh.generate(2)
+            vtags, vxz, _ = gmsh.model.mesh.getNodes()
+            nxz = vxz.reshape((-1, 3))
+            elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+            nxzsurf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+    
+        # if view_planes:
+        #     gmsh.clear()
+        #     gmsh.merge(outputs + 'current_mesh.brep')
+        #     gmsh.merge(outputs + 'boundary_field.brep')
+        #     gmsh.merge(outputs + 'current_field_xy.brep')
+        #     gmsh.merge(outputs + 'current_field_yz.brep')
+        #     gmsh.merge(outputs + 'current_field_xz.brep')
+        #     gmsh.model.mesh.generate(2)
+        #     gmsh.model.occ.synchronize()
+        #     gmsh.fltk.run()
+        gmsh.finalize()
+
         # Field plane evaluation
         prog = 0
         # for fi in frequencies:

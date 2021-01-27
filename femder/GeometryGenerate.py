@@ -8,6 +8,7 @@ import gmsh
 import numpy as np
 import femder as fd
 import sys
+import os
 class GeometryGenerator():
     def __init__(self,AP,fmax=1000, num_freq=6,scale=1,order=1,S=None,R=None,plot=False):
         self.R_ = R
@@ -26,8 +27,6 @@ class GeometryGenerator():
         # gmsh.finalize()
         gmsh.initialize()
         gmsh.model.add('gen_geom.geo')
-        self.path_to_geo = 'gen_geom.geo'
-
         pts_sym = pts.copy()
         pts_sym[:,0] = -pts_sym[:,0]
         tagg = []
@@ -112,6 +111,10 @@ class GeometryGenerator():
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(self.order)    
         gmsh.write('current_mesh.msh')
+        gmsh.write('current_mesh.brep')
+        if self.plot:
+            gmsh.fltk.run()
+        gmsh.model.occ.synchronize()
         gmsh.clear()
 
 
@@ -128,7 +131,16 @@ class GeometryGenerator():
         self.NumElemC = Grid.NumElemC
         self.order = Grid.order
         self.path_to_geo = Grid.path_to_geo
-        # gmsh.finalize()
+        
+        current_path = os.getcwd()
+        self.path_to_geo_unrolled = current_path+'\\current_mesh.brep'
+        
+        try:
+            gmsh.finalize()
+        except:
+            pass
+        
+
 
         # gmsh.model.mesh.optimize('Netgen')
         # # gmsh.model.mesh.optimize(method='Relocate3D',force=False)
