@@ -277,7 +277,7 @@ def assemble_bem_3gauss_prepost(Incid,Coord,rF,w,k0,rho0,normals,areas):
     I = np.zeros((lenG,lenG),dtype = np.complex64)
     Cc = np.zeros((lenG,lenG),dtype = np.complex64)
     
-    Pi = np.zeros((lenG,1),dtype = np.complex64)
+    Pi = np.zeros((lenG,len(rF)),dtype = np.complex64)
     GN=np.array([[1, 0, -1],[0, 1, -1]],dtype=np.float64)
     
     a=1/6
@@ -292,9 +292,10 @@ def assemble_bem_3gauss_prepost(Incid,Coord,rF,w,k0,rho0,normals,areas):
     detJa,xg,yg,zg = pre_proccess_bem_t3(Incid, Coord, N, GN)
     for nod in tqdm(range(len(Coord))):
         rS = Coord[nod,:]
-        rF_rS = np.linalg.norm(rS-rF)
-        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
-        Pi[nod] = np.exp(-1j*k0*rF_rS)/(rF_rS)
+        for i in range(len(rF)):
+            rF_rS = np.linalg.norm(rS-rF[i,:])
+            # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+            Pi[nod,i] = np.exp(-1j*k0*rF_rS)/(rF_rS)
         
         for es in range(len(Incid)):
             con = Incid[es,:]
@@ -316,7 +317,7 @@ def evaluate_bem_3gauss_prepost(R,Incid,Coord,rF,w,k0,rho0,normals,areas):
     Gf = np.zeros((lenR,lenG),dtype = np.complex64)
     I2 = np.zeros((lenR,lenG),dtype = np.complex64)
     
-    Pi = np.zeros((lenR,),dtype = np.complex64)
+    Pi = np.zeros((lenR,len(rF)),dtype = np.complex64)
     GN=np.array([[1, 0, -1],[0, 1, -1]],dtype=np.float64)
     
     a=1/6
@@ -332,9 +333,11 @@ def evaluate_bem_3gauss_prepost(R,Incid,Coord,rF,w,k0,rho0,normals,areas):
     detJa,xg,yg,zg = pre_proccess_bem_t3(Incid, Coord, N, GN)
     for fp in (range(len(R.coord))):
         coord_FP = R.coord[fp,:]
-        rF_rS = np.linalg.norm(coord_FP-rF)
-        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
-        Pi[fp] = -np.exp(-1j*k0*rF_rS)/(rF_rS)
+        for i in range(len(rF)):
+            
+            rF_rS = np.linalg.norm(coord_FP-rF[i,:])
+            # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+            Pi[fp,i] = -np.exp(-1j*k0*rF_rS)/(rF_rS)
         
         for es in range(len(Incid)):
             con = Incid[es,:]
@@ -700,6 +703,7 @@ class BEM3D:
         self.areas= compute_areas(self.nos, self.elem_surf)
         self.interp = 'linear'
         self.coloc_cre = 'integ'
+        self.individual_sources = False
         
 
     def compute(self,timeit=True,printless=True):
@@ -720,13 +724,25 @@ class BEM3D:
         then = time.time()
         # print('Computation has started')
         p = []
+        pS = []
+
         for i in tqdm(range(len(self.freq))):
             
             
             if self.interp == 'constant':
                 Gs,I,Pi = assemble_BEM(self.elem_surf,self.nos,self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
                 C = 0.5*np.eye(len(self.elem_surf))
-                pC,info = gmres((C-I),(Pi))
+                if self.individual_sources==True:
+                    for es in range(len(self.S.coord)):
+                        
+                        pC,info = gmres((C-I),(Pi[:,es]))
+                        pS.append(pC)
+                        
+                elif self.individual_sources ==False:
+                    pC,info = gmres((C-I),(np.sum(Pi,axis=1)))
+                    pS = pC
+                
+                # pC,info = gmres((C-I),(Pi))
             elif self.interp == 'linear':
                 Gs,I,Cc,Pi = assemble_bem_3gauss_prepost(self.elem_surf,self.nos,self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
                 
@@ -735,12 +751,21 @@ class BEM3D:
                 elif self.coloc_cte == 'integ':
                     C = np.eye(len(self.nos)) - Cc
                 # C = 0.5*np.eye(len(self.nos))
-                pC,info = gmres((C+I),(Pi))
+                
+                if self.individual_sources==True:
+                    for es in range(len(self.S.coord)):
+                        
+                        pC,info = gmres((C+I),(Pi[:,es]))
+                        pS.append(pC)
+                        
+                elif self.individual_sources ==False:
+                    pC,info = gmres((C+I),(np.sum(Pi,axis=1)))
+                    pS = pC
                 
             if info != 0:
                 print('Solver failed to converge')
             
-            p.append(pC)
+            p.append(pS)
         
         self.pC = p
         self.t = time.time()-then
@@ -777,23 +802,62 @@ class BEM3D:
         self.R = R
         pT = []
         pS = []
+        pTT = []
+        pSS = []
         for i in range(len(self.freq)):
                 
             if self.interp == 'constant':
-                Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                if self.individual_sources==True:
+                    for es in range(len(self.S.coord)):
+                        
+                        Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                        ptt,pss = evaluate_p_field(I2,Gf,Pifp[:,es],self.pC[i][es])                        
+                        
+                        pTT.append(ptt)
+                        pSS.append(pss)
+                
+                    pT.append(np.array(pTT))
+                    pS.append(np.array(pSS))
+                
+                elif self.individual_sources ==False:
+                    Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                    ptt,pss = evaluate_p_field(I2,Gf,np.sum(Pifp,axis=1),self.pC[i][es])                        
+                    
+                    pT.append(ptt)
+                    pS.append(pss)  
+                    
+                # Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
              
             if self.interp == 'linear':
-                Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                if self.individual_sources==True:
+                    for es in range(len(self.S.coord)):
+                        
+                        Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                        ptt,pss = evaluate_p_field(I2,Gf,Pifp[:,es],self.pC[i][es])                        
+                        
+                        pTT.append(ptt)
+                        pSS.append(pss)
+                
+                    pT.append(np.array(pTT))
+                    pS.append(np.array(pSS))
+                
+                elif self.individual_sources ==False:
+                    Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                    ptt,pss = evaluate_p_field(I2,Gf,np.sum(Pifp,axis=1),self.pC[i])                        
+                    
+                    pT.append(ptt)
+                    pS.append(pss)  
+                # Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
             
-            print(Gf.shape)
-            print(Pifp.shape)
-            ptt,pss = evaluate_p_field(I2,Gf,Pifp,self.pC[i])
+            # print(Gf.shape)
+            # print(Pifp.shape)
+            # ptt,pss = evaluate_p_field(I2,Gf,Pifp,self.pC[i])
                    
-            pT.append(ptt)
-            pS.append(pss)
+            # pT.append(ptt)
+            # pS.append(pss)
             
-        self.pT = np.array(pT)
-        self.pS = np.array(pS)
+        self.pT = (pT)
+        self.pS = (pS)
         
         if plot:
             if len(R.theta > 0):
