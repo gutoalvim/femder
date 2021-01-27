@@ -26,6 +26,8 @@ class GeometryGenerator():
         # gmsh.finalize()
         gmsh.initialize()
         gmsh.model.add('gen_geom.geo')
+        self.path_to_geo = 'gen_geom.geo'
+
         pts_sym = pts.copy()
         pts_sym[:,0] = -pts_sym[:,0]
         tagg = []
