@@ -35,7 +35,7 @@ $ python setup.py install
 
 # 5) Install your IDE of choice, Jupyter Notebook is great to run this package and do your work in a organized fashion.
 
-pip install jupyter-notebook
+pip install jupyter- notebook
 
 # ---------
 Have fun doing acoustics, if you have any thoughts, issues, suggestions, let me know here on Git or send me an email (luiz.alvim@eac.ufsm.br)
