@@ -25,6 +25,8 @@ $pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle ge
 
 $pip install scikit-umfpack==0.3.1
 
+$conda install -c plotly plotly-orca
+
 # 4) Install Femder:
 
 $ git clone https://github.com/gutoalvim/femder.git
