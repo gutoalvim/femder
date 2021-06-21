@@ -164,7 +164,7 @@ def fitness_metric(complex_pressure,AC,fmin,fmax):
     
     ir = fd.IR(fs,ir_duration,fmin,fmax).compute_room_impulse_response(complex_pressure.ravel())
     t_ir = np.linspace(0,ir_duration,len(ir))
-    sbir = fd.SBIR(ir,t_ir,AC.freq[0],AC.freq[-1],method='peak')
+    sbir = fd.SBIR(ir,t_ir,AC.freq[0],AC.freq[-1],method='constant')
     sbir_freq = sbir[1]
     sbir_SPL = fd.p2SPL(sbir_freq)[fmin_indx:fmax_indx]
     modal_SPL = fd.p2SPL(complex_pressure.ravel()).ravel()[fmin_indx:fmax_indx]

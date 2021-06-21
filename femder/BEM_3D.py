@@ -637,7 +637,7 @@ def evaluate_p_field(I2,Gf,Pifp,pC):
 
 # @numba.jitclass
 class BEM3D:
-    def __init__(self,Grid,S,R,AP,AC,BC=None):
+    def __init__(self,Grid,S,R,AP,AC,BC=None,interp='linear'):
         """
         Initializes FEM3D Class
 
@@ -701,8 +701,8 @@ class BEM3D:
 
         self.normals = compute_normals(self.nos, self.elem_surf)
         self.areas= compute_areas(self.nos, self.elem_surf)
-        self.interp = 'linear'
-        self.coloc_cre = 'integ'
+        self.interp = interp
+        self.coloc_cte = 'integ'
         self.individual_sources = False
         
 
@@ -821,7 +821,7 @@ class BEM3D:
                 
                 elif self.individual_sources ==False:
                     Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
-                    ptt,pss = evaluate_p_field(I2,Gf,np.sum(Pifp,axis=1),self.pC[i][es])                        
+                    ptt,pss = evaluate_p_field(I2,Gf,np.sum(Pifp,axis=1),self.pC[i])                        
                     
                     pT.append(ptt)
                     pS.append(pss)  
@@ -911,7 +911,8 @@ class BEM3D:
         return self.pR
     
         
-    def surf_evaluate(self,freq,renderer='notebook',d_range = 45):
+    def surf_evaluate(self,freq,renderer='notebook',d_range = 45,
+                      saveFig=False,title=False,transparent_bg=False,filename=None,camera_angles=['floorplan', 'section', 'diagonal'],extension='png'):
         """
         Evaluates pressure in the boundary of the mesh for a given frequency, and plots with plotly.
         Choose adequate rederer, if using Spyder or similar, use renderer='browser'.
@@ -932,6 +933,8 @@ class BEM3D:
         """
         
         import plotly.graph_objs as go
+        import plotly.figure_factory as ff
+
         
         fi = np.argwhere(self.freq==freq)[0][0]
         vertices = self.nos.T
@@ -955,7 +958,17 @@ class BEM3D:
         elif self.interp == 'constant':
             imode = 'cell'
             
-        fig =  go.Figure(go.Mesh3d(
+        fig = ff.create_trisurf(
+            x=vertices[0, :],
+            y=vertices[1, :],
+            z=vertices[2, :],
+            simplices=elements.T,
+            color_func=elements.shape[1] * ["rgb(255, 222, 173)"],
+        )
+        fig['data'][0].update(opacity=0.3)
+        
+        fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+        fig.add_trace(go.Mesh3d(
             x=vertices[0, :],
             y=vertices[1, :],
             z=vertices[2, :],
@@ -971,6 +984,47 @@ class BEM3D:
         fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
         import plotly.io as pio
         pio.renderers.default = renderer
+        
+        if title is False:
+            fig.update_layout(title="")
+        if transparent_bg:
+            fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
+                               'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
+        if saveFig:
+            # folderCheck = os.path.exists('/Layout')
+            # if folderCheck is False:
+            #     os.mkdir('/Layout')
+            if filename is None:
+                for camera in camera_angles:
+                    if camera == 'top' or camera == 'floorplan':
+                        camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'lateral' or camera == 'side' or camera == 'section':
+                        camera_dict = dict(eye=dict(x=2.5, y=0., z=0.0),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'front':
+                        camera_dict = dict(eye=dict(x=0., y=2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'rear' or camera == 'back':
+                        camera_dict = dict(eye=dict(x=0., y=-2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_front':
+                        camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_rear':
+                        camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    fig.update_layout(scene_camera=camera_dict)
+    
+                    fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
+            else:
+                fig.write_image(filename+'.'+extension, scale=2)
         fig.show()
         
     def plot_problem(self,renderer='notebook',saveFig=False,filename=None,

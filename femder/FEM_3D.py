@@ -13,7 +13,8 @@ from tqdm import tqdm
 import warnings
 from numba import jit
 import cloudpickle
-# from numba import njit
+from numba import njit
+import numba
 from scipy.sparse import coo_matrix
 from scipy.sparse import csc_matrix
 
@@ -284,6 +285,8 @@ def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     Q = Q.tocsc()
     
     return H,Q
+
+
 @jit
 def assemble_Q_H_4_FAST_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,domain_index_vol,fi):
 
@@ -475,7 +478,57 @@ def int_tetra_simpl(coord_el,c0,rho0,npg):
 #                 Qe = Qe + wtx*wty*wtz*argQe1 
     
 #     return He,Qe
-@jit
+def assemble_Q_H_4_ULTRAFAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
+
+    Hez = np.zeros([4,4,NumElemC])
+    Qez = np.zeros([4,4,NumElemC])
+    coord_el_e = coord_el_pre(NumElemC,elem_vol,nos)
+    Ja_,GNi = Ja_pre(coord_el_e)
+    argHe_,detJa_= detJa_pre(Ja_, GNi, rho0)
+    ptx,pty,ptz = gauss_4_points()
+    for e in tqdm(range(NumElemC)):
+        argHe = argHe_[:,:,e]
+        detJa = detJa_[e]
+        He, Qe = nint_tetra_4gauss(np.complex64(c0),numba.complex64(rho0),
+                                   numba.complex64(argHe),detJa,ptx,pty,ptz)    
+        Hez[:,:,e] = He
+        Qez[:,:,e] = Qe
+    
+    NLB=np.size(Hez,1)
+    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
+    X = np.transpose(Y, (1, 0, 2))
+    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+    
+    H = H.tocsc()
+    Q = Q.tocsc()
+    
+    return H,Q
+def coord_el_pre(NumElemC,elem_vol,nos):
+    coord_el_= []
+    for e in range(NumElemC):
+        con = elem_vol[e,:]
+        coord_el_.append(np.complex64(nos[con,:]))
+    return coord_el_
+
+def Ja_pre(coord_el):
+    
+    GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]],dtype=np.complex64)
+    Ja = np.zeros((3,3,len(coord_el)))
+    for i in range(len(coord_el)): 
+        Ja[:,:,i] = np.dot(GNi,coord_el[i])
+    return Ja,GNi
+
+def detJa_pre(Ja,GNi,rho0):
+    detJa =  np.zeros((len(Ja[0,0,:]),))
+    B = np.zeros((3,4,len(Ja[0,0,:])))
+    argHe1 = np.zeros((4,4,len(Ja[0,0,:])))
+    for i in range(len(Ja[0,0,:])):
+        detJa[i] =  np.linalg.det(Ja[:,:,i])
+        B[:,:,i] = (np.linalg.inv(Ja[:,:,i])@GNi)
+        argHe1[:,:,i] = (1/rho0)*(np.transpose(B[:,:,i] )@B[:,:,i])*detJa[i]
+    return argHe1,detJa
+
 def int_tetra_4gauss(coord_el,c0,rho0):
 
     He = np.zeros([4,4],dtype='cfloat')
@@ -503,7 +556,7 @@ def int_tetra_4gauss(coord_el,c0,rho0):
         qsi[1]= pty[indx]
         qsi[2] = ptz[indx]
                 
-        Ni = np.array([[1-qsi[0]-qsi[1]-qsi[2]],[qsi[0]],[qsi[1]],[qsi[2]]])
+        Ni = np.array([[1-qsi[0]-qsi[1]-qsi[2]],[qsi[0]],[qsi[1]],[qsi[2]]],dtype=np.complex64)
 
         argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
         
@@ -511,6 +564,27 @@ def int_tetra_4gauss(coord_el,c0,rho0):
         Qe = Qe + weigths*argQe1 
     
     return He,Qe
+def gauss_4_points():
+        #Pontos de Gauss para um tetraedro
+    a = 0.5854101966249685#(5-np.sqrt(5))/20 
+    b = 0.1381966011250105 #(5-3*np.sqrt(5))/20 #
+    ptx = np.array([a,b,b,b])
+    pty = np.array([b,a,b,b])
+    ptz = np.array([b,b,a,b])
+    return ptx,pty,ptz
+@njit
+def nint_tetra_4gauss(c0,rho0,argHe,detJa,ptx,pty,ptz):
+    He = np.zeros((4,4),dtype=np.complex64)
+    Qe = np.zeros((4,4),dtype=np.complex64)
+    
+    for indx in range(4):
+        Ni = np.array([[1-ptx[indx]-pty[indx]-ptz[indx]],[ptx[indx]],[pty[indx]],[ptz[indx]]],dtype=np.complex64)  
+        argQe1 = (1/(rho0*c0**2))*np.dot(Ni,Ni.transpose())*detJa
+        He += 1/24*argHe  
+        Qe += 1/24*argQe1 
+
+    return He,Qe
+
 
 @jit
 def int_tetra_5gauss(coord_el,c0,rho0):
@@ -619,7 +693,7 @@ def int_tri_impedance_1gauss(coord_el):
     Ae = Ae + wtz*wtz*argAe1
     
     return Ae
-@jit
+# @jit
 def int_tri_impedance_3gauss(coord_el):
 
 
@@ -750,8 +824,24 @@ def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
     ps = spsolve(G,b)
     return ps
 
-def solve_modal_superposition(AC,F_n,Vc):
-    pass
+@njit
+def solve_modal_superposition(indR,indS,F_n,Vc,Vc_T,w,qindS,N,hn,Mn,ir):
+    lenS = numba.int64(len(indS))
+    lenfn = numba.int64(len(F_n))
+    
+    An = np.zeros((1,1),dtype=np.complex64)
+    # pmN = np.zeros((len(indR),),dtype=np.complex64)
+    # An = 0+0*1j
+    for ii in range(lenS):
+        for e in range(lenfn):
+        
+            wn = F_n[e]*2*np.pi
+            # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
+            # print(((wn-self.w[N])*Mn[e]))
+            An[0] += Vc_T[e,indS[ii]]*(1j*w[N]*qindS[ii])*Vc[indR[ir],e]/((wn**2-w[N]**2)*Mn[e]+1j*hn[e]*w[N])
+            # An[0] += Vc_T[e,2]*(1j*w[N]*qindS[ii])*Vc[2,e]/((wn**2-w[N]**2)*Mn[e]+1j*hn[e]*w[N])
+
+    return An[0]
     
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
@@ -865,7 +955,7 @@ class FEM3D:
         
         if len(self.rho) == 0:
             if self.order == 1:
-                self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+                self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
             elif self.order == 2:
                 self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
             #Assemble A(Amortecimento)
@@ -1007,8 +1097,8 @@ class FEM3D:
     def optimize_source_receiver_pos(self,num_grid_pts,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
                                      minimum_distance_between_speakers=1.2,speaker_receiver_height=1.2,neigs=50,
                                      plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
-                                     print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal']):
-        
+                                     print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal'],timeit=True):
+        then = time.time()
         sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,
                                  max_distance_from_wall=max_distance_from_wall,
                                  minimum_distance_between_speakers=minimum_distance_between_speakers,speaker_receiver_height = speaker_receiver_height)
@@ -1027,6 +1117,8 @@ class FEM3D:
         self.R.coord = R_all 
         self.S = fd.Source()
         self.S.coord = S_all
+        self.Scand = self.S
+        self.Rcand = self.R
         
         if plot_geom:
             self.plot_problem(renderer=renderer,saveFig=saveFig,camera_angles=camera_angles)  
@@ -1047,9 +1139,17 @@ class FEM3D:
         self.pOptim = []
         pOptim = []
         fom = []
+        fig = plt.figure(figsize=(12,8))
+
         if method != 'None':
             if method == 'modal':
-                self.eigenfrequency(neigs)
+                self.eigenfrequency(neigs,timeit=False)
+                if self.BC != None:
+                    if self.order == 1:
+                        self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                    elif self.order == 2:
+                        self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                    
             for i in range(len(rC)):
                 
                 self.R = rC[i]
@@ -1066,19 +1166,20 @@ class FEM3D:
                 fom.append(np.real(fm))
                 
                 if plot_evaluate:
-                    plt.semilogx(self.freq,pR_mean,label=f'{fm}')
+                    plt.semilogx(self.freq,pR_mean,label=f'{fm:.2f}')
                     plt.legend()
                     plt.xlabel('Frequency [Hz]')
                     plt.ylabel('SPL [dB]')
                     plt.grid()
-                    plt.show()
+                    # plt.show()
                 
             
-            
+            # plt.savefig('optim_cand.png',dpi=300)
             min_indx = np.argmin(np.array(fom))
-            
+
             if plotBest:
-                
+                fig = plt.figure(figsize=(12,8))
+         
                 plt.semilogx(self.freq,np.real(p2SPL(pOptim[min_indx])),label='Total')
                 sbir_freq,pR_sbir = SBIR_SPL(pOptim[min_indx],self.AC,fmin,fmax)
                 plt.semilogx(sbir_freq,pR_sbir,label='SBIR')
@@ -1088,6 +1189,7 @@ class FEM3D:
                 plt.ylabel('SPL [dB]')
                 plt.title(f'Fitness: {fm:.3f}')
                 plt.grid()
+                plt.savefig('best_modal_Sbir.png',dpi=300, transparent=True)
                 plt.show()
                 
             if print_info:
@@ -1097,6 +1199,16 @@ class FEM3D:
             self.S.coord = sC[min_indx].coord[:,0,:]
             self.pOptim = [fom,np.array(pOptim)]
             self.bestMetric = np.amin(fom)
+            self.t = time.time()-then
+
+            if timeit:
+                if self.t <= 60:
+                    print(f'Time taken: {self.t} s')
+                elif 60 < self.t < 3600:
+                    print(f'Time taken: {self.t/60} min')
+                elif self.t >= 3600:
+                    print(f'Time taken: {self.t/60} min')
+                    
         
         return self.pOptim
             
@@ -1132,9 +1244,9 @@ class FEM3D:
         then = time.time()
         self.H = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
         self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype = np.float64)
-        
+        self.A = None
         if self.order == 1:
-            self.H,self.Q = assemble_Q_H_4_FAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+            self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
         elif self.order == 2:
             self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
          
@@ -1243,13 +1355,17 @@ class FEM3D:
     def modal_superposition(self,R):
         self.R = R
         Mn = np.diag(self.Vc.T@self.Q@self.Vc)
-
+        
+        
         if self.BC != None:
-            if self.order == 1:
-                self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
-            elif self.order == 2:
-                self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
             
+            if self.A == None:
+                print(self.A)
+                if self.order == 1:
+                    self.A = assemble_A_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                elif self.order == 2:
+                    self.A = assemble_A10_3_FAST(self.domain_index_surf,self.number_ID_faces,self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                
                 
             indS = [] 
             indR = []
@@ -1262,7 +1378,7 @@ class FEM3D:
                 
             # print(qindS[1])
             pmN = [] # np.zeros_like(self.freq,dtype=np.complex128)
-            for N in tqdm(range(len(self.freq))):
+            for N in range(len(self.freq)):
                 i = 0
                 Ag = 0
                 for bl in self.number_ID_faces:
@@ -1272,30 +1388,37 @@ class FEM3D:
                     
                 hn = np.diag(self.Vc.T@Ag@self.Vc)
                 # print(hn)
-                An = 0 + 1j*0
-                for ir in range(len(indR)):
-                    for ii in range(len(indS)):
-                        for e in range(len(self.F_n)):
+                # An = 0 + 1j*0
+                # for ir in range(len(indR)):
+                #     for ii in range(len(indS)):
+                #         for e in range(len(self.F_n)):
                         
-                            wn = self.F_n[e]*2*np.pi
-                            # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
-                            # print(((wn-self.w[N])*Mn[e]))
-                            An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR[ir],e]/((wn**2-self.w[N]**2)*Mn[e]+1j*hn[e]*self.w[N])
+                #             wn = self.F_n[e]*2*np.pi
+                #             # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
+                #             # print(((wn-self.w[N])*Mn[e]))
+                #             An += self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR[ir],e]/((wn**2-self.w[N]**2)*Mn[e]+1j*hn[e]*self.w[N])
                             
-                    pmN.append(An[0])
-                
+                #     pmN.append(An[0])
+                for ir in range(len(indR)):
+                    i = int(ir)
+                    pf = solve_modal_superposition(numba.int16(indR),numba.int16(indS),
+                                                   numba.complex64(self.F_n),numba.complex64(self.Vc),
+                                                   numba.complex64(self.Vc.T),numba.complex64(self.w),
+                                                   numba.complex64(qindS),(N),
+                                                   numba.complex64(hn),numba.complex64(Mn),ir)
+                    pmN.append(pf)
             self.pm = np.array(pmN)
             
         return self.pm
             
-    def modal_evaluate(self,freq,renderer='notebook',d_range = None):
+    def modal_evaluate(self,freq,renderer='notebook',d_range = None,saveFig=False,filename=None,
+                     camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,extension='png'):
         import plotly.graph_objs as go
         
         fi = find_nearest((np.real(self.F_n)),freq)
         # print(fi)
         unq = np.unique(self.elem_surf)
         uind = np.arange(np.amin(unq),np.amax(unq)+1,1,dtype = int)
-        print(uind)
         vertices = self.nos[uind].T
         # vertices = self.nos[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
@@ -1323,6 +1446,47 @@ class FEM3D:
         fig.update_layout(title=dict(text = f'Frequency: {(np.real(self.F_n[fi])):.2f} Hz | Mode: {fi}'))
         import plotly.io as pio
         pio.renderers.default = renderer
+        if title is False:
+            fig.update_layout(title="")
+        if transparent_bg:
+            fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
+                               'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
+        if saveFig:
+            # folderCheck = os.path.exists('/Layout')
+            # if folderCheck is False:
+            #     os.mkdir('/Layout')
+            if filename is None:
+                for camera in camera_angles:
+                    if camera == 'top' or camera == 'floorplan':
+                        camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'lateral' or camera == 'side' or camera == 'section':
+                        camera_dict = dict(eye=dict(x=2.5, y=0., z=0.0),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'front':
+                        camera_dict = dict(eye=dict(x=0., y=2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'rear' or camera == 'back':
+                        camera_dict = dict(eye=dict(x=0., y=-2.5, z=0.),
+                                           up=dict(x=0, y=1, z=0),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_front':
+                        camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    elif camera == 'diagonal_rear':
+                        camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
+                                           up=dict(x=0, y=0, z=1),
+                                           center=dict(x=0, y=0, z=0), )
+                    fig.update_layout(scene_camera=camera_dict)
+    
+                    fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
+            else:
+                fig.write_image(filename+'.'+extension, scale=2)
+        fig.show()
         fig.show()       
     def evaluate(self,R,plot=False):
         """
@@ -1581,11 +1745,11 @@ class FEM3D:
                        view_planes=False, gridsize=0.1, gridColor="rgb(230, 230, 255)",
                        opacity=0.2, opacityP=1, hide_dots=False, figsize=(950, 800),
                        showbackground=True, showlegend=True, showedges=True, colormap='jet',
-                       saveFig=False, colorbar=True, showticklabels=True, info=True, title=True,
+                       saveFig=False,extension='png',room_opacity=0.3, colorbar=True, showticklabels=True, info=True, title=True,
                        axis_labels=['(X) Width [m]', '(Y) Length [m]', '(Z) Height [m]'], showgrid=True,
                        camera_angles=['floorplan', 'section', 'diagonal'], device='CPU',
                        transparent_bg=True, returnFig=False, show=True, filename=None,
-                       renderer='notebook'):
+                       renderer='notebook',centerc=None,eyec=None,upc=None):
     
         import gmsh
         import sys
@@ -1613,7 +1777,7 @@ class FEM3D:
             path_to_geo = self.path_to_geo
             
         print(path_to_geo)
-        filename, file_extension = os.path.splitext(path_to_geo)
+        filenamez, file_extension = os.path.splitext(path_to_geo)
         path_name = os.path.dirname(path_to_geo)
         tgv = gmsh.model.getEntities(3)
         # ab = gmsh.model.getBoundingBox(3, tgv[0][1])
@@ -1796,7 +1960,7 @@ class FEM3D:
             z=vertices[2, :],
             simplices=elements.T,
             color_func=elements.shape[1] * ["rgb(255, 222, 173)"],)
-        fig['data'][0].update(opacity=0.3)
+        fig['data'][0].update(opacity=room_opacity)
         fig.update_layout(title=dict(text = f'Frequency: {(np.real(self.freq[fi])):.2f} Hz'))
         # Planes
         # grid = boundData[0].space.grid
@@ -1888,6 +2052,9 @@ class FEM3D:
             fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
                                'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
         if saveFig:
+            # folderCheck = os.path.exists('/Layout')
+            # if folderCheck is False:
+            #     os.mkdir('/Layout')
             if filename is None:
                 for camera in camera_angles:
                     if camera == 'top' or camera == 'floorplan':
@@ -1914,11 +2081,15 @@ class FEM3D:
                         camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
                                            up=dict(x=0, y=0, z=1),
                                            center=dict(x=0, y=0, z=0), )
+                    elif camera == 'custom':
+                        camera_dict = dict(eye=dict(x=eyec[0], y=eyec[1], z=eyec[2]),
+                                           up=dict(x=upc[0], y=upc[1], z=upc[2]),
+                                           center=dict(x=centerc[0], y=centerc[1], z=centerc[2]), )
                     fig.update_layout(scene_camera=camera_dict)
-
-                    fig.write_image(f'_3D_pressure_plot_{camera}_{int(self.freq[fi])}Hz.png', scale=2)
+    
+                    fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
             else:
-                fig.write_image(filename + '.png', scale=2)
+                fig.write_image(filename+'.'+extension, scale=2)
 
         if show:
             plotly.offline.iplot(fig)

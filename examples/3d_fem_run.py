@@ -39,7 +39,7 @@ BC.normalized_admittance(3,0.02)
 
 BC.rigid(2)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 1000,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
 
 
@@ -114,7 +114,7 @@ plt.legend()
 
 fn = obj.eigenfrequency(20)
 
-obj.modal_evaluate(49,'browser',d_range=None)
+# obj.modal_evaluate(49,'browser',d_range=None)
 
 #%%
 
