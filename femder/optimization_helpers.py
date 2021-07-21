@@ -91,12 +91,12 @@ def r_s_positions(grid,grid_pts,bias):
         So.append(S)
     return So,Ro
 
-def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distance_from_wall=0.6,speaker_receiver_height=1.2):
+def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distance_from_wall=0.6,speaker_receiver_height=1.2,min_distance_from_backwall=0.6,max_distance_from_backwall=1.5):
     
     ymax = np.amax(grid.nos[:,1])
     
-    y_start = ymax*0.7
-    y_end = ymax*0.85
+    y_start = ymax - max_distance_from_backwall
+    y_end = ymax-min_distance_from_backwall#*0.85
     
     y_space = np.linspace(y_start,y_end,grid_pts[1])
     

@@ -84,6 +84,13 @@ class GridImport3D:
             # print((self.c0*self.scale)/self.fmax/self.num_freq)
             lc = 0#(self.c0*self.scale)/self.fmax/self.num_freq
             tg = gmsh.model.occ.getEntities(3)
+            pgv = gmsh.model.getPhysicalGroups(3)
+            if len(pgv) == 0:
+                pg_start=1
+                physical_groups = [i for i in range(pg_start, len(tg) + pg_start)]
+                for entity, i in zip(tg, range(len(tg))):
+                    gmsh.model.addPhysicalGroup(entity[0], [entity[1]], physical_groups[i])
+    
             # tg2 = gmsh.model.occ.getEntities(2)
             if self.R != None:
                 for i in range(len(self.R.coord)):
@@ -126,10 +133,18 @@ class GridImport3D:
                 self.nos = vxyz.reshape((-1, 3))/scale
                 
                 
-            pg = gmsh.model.getPhysicalGroups(2)   
+            pg = gmsh.model.getPhysicalGroups(2)  
+            tg2 = gmsh.model.occ.getEntities(2)
+            print(pg)
+            if len(pg) == 0:
+                surfaces_entities = tg2
+                pg_start = 2
+                physical_groups = [i for i in range(pg_start, len(surfaces_entities) + pg_start)]
+                for entity, i in zip(surfaces_entities, range(len(surfaces_entities))):
+                    gmsh.model.addPhysicalGroup(entity[0], [entity[1]], physical_groups[i])
             va= []
             vpg = []
-            
+            pg = gmsh.model.getPhysicalGroups(2) 
             for i in range(len(pg)):
                 v = gmsh.model.getEntitiesForPhysicalGroup(2, pg[i][1])
                 for ii in range(len(v)):

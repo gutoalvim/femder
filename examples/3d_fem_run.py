@@ -39,7 +39,7 @@ BC.normalized_admittance(3,0.02)
 
 BC.rigid(2)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 1000,num_freq=6,scale=1,order=1)
+grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
 
 
@@ -48,9 +48,16 @@ grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 1000,num_freq=6,scale=1,order=1
 # grid.plot_mesh(False)
 obj = fd.FEM3D(grid,S,R,AP,AC,BC)
 #%%
-obj.optimize_source_receiver_pos([4,4],plot_geom=True,renderer='browser')
+obj.optimize_source_receiver_pos([3,3],minimum_distance_between_speakers=0.9,
+                                      max_distance_from_wall=0.7,speaker_receiver_height=1.24,
+                                      min_distance_from_backwall=0.6,max_distance_from_backwall=1.5,
+                                      method='modal',neigs=200,plot_geom=False,renderer='browser',
+                                      print_info=False,saveFig=False,camera_angles=['diagonal_front'],
+                                      plot_evaluate=False,plotBest=False)
 
+#%%
 
+obj.R.coord
 #%%
 obj.compute()
 #%%
