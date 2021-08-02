@@ -1692,7 +1692,7 @@ class FEM3D:
                 x=vertices[0, :],
                 y=vertices[1, :],
                 z=vertices[2, :],
-                i=con[0, :], j=con[1, :], k=con[2, :],opacity=0.3,showlegend=True,visible=True,name=f'Physical Group {int(bl)}'
+                i=con[0, :], j=con[1, :], k=con[2, :],opacity=0.3,showlegend=True,visible=True,name=f'PG {int(bl)}'
                 ))
                 # fig['data'][0].update(opacity=0.3)
             # 
@@ -1754,8 +1754,10 @@ class FEM3D:
                        camera_angles=['floorplan', 'section', 'diagonal'], device='CPU',
                        transparent_bg=True, returnFig=False, show=True, filename=None,
                        renderer='notebook',centerc=None,eyec=None,upc=None):
-    
-        import gmsh
+        try: 
+            import gmsh
+        except:
+            import gmsh_api as gmsh
         import sys
         # from matplotlib.colors import Normalize
         import plotly
