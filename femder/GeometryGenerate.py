@@ -7,7 +7,7 @@ Created on Thu Dec 24 12:55:23 2020
 try: 
     import gmsh
 except:
-    import gmsh_api as gmsh
+    import gmsh_api.gmsh as gmsh
 import numpy as np
 import femder as fd
 import sys

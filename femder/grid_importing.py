@@ -17,6 +17,7 @@ class GridImport():
         
     
         import meshio
+        
         import gmsh
         import sys
         import os
@@ -67,7 +68,10 @@ class GridImport3D:
         self.c0 = np.real(AP.c0)
     
         import meshio
-        import gmsh
+        try: 
+            import gmsh
+        except:
+            import gmsh_api.gmsh as gmsh
         import sys
         import os
         filename, file_extension = os.path.splitext(path_to_geo)

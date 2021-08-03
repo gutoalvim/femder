@@ -1757,7 +1757,7 @@ class FEM3D:
         try: 
             import gmsh
         except:
-            import gmsh_api as gmsh
+            import gmsh_api.gmsh as gmsh
         import sys
         # from matplotlib.colors import Normalize
         import plotly
