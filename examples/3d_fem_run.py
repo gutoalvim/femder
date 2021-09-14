@@ -18,26 +18,27 @@ path_to_geo = "..\\Mshs\\FEM_3D\\cplx_room.geo"
 
 
 AP = fd.AirProperties(c0 = 343)
-AC = fd.AlgControls(AP,20,200,1)
+AC = fd.AlgControls(AP,10,250,1)
 
 S = fd.Source("spherical")
 
 S.coord = np.array([[-1,2.25,1.2],[1,2.25,1.2]])
 S.q = np.array([[0.0001],[0.0001]])
 
-R = fd.Receiver([0,1,1.2])
-
+R = fd.Receiver(coord=[0,1,1.2])
+# R.star([0,1,1.2],0.15)
 BC = fd.BC(AC,AP)
 # BC.normalized_admittance(3,0.02)
-tmm = fd.TMM(20,200,1)
-tmm.porous_layer(sigma=10.9, t=150, model='db')
+tmm = fd.TMM(20,2000,1)
+tmm.porous_layer(sigma=10.9, t=150, model='mac')
 tmm.compute()
 # BC.normalized_admittance(3,tmm.y_norm)
-# BC.mu[3] = (tmm.y)
+# BC.mu[2] = (tmm.y)
 # BC.delany(3,10900,0.15)
 BC.normalized_admittance(3,0.02)
+BC.normalized_admittance(2,0.02)
 
-BC.rigid(2)
+# BC.rigid(2)
 #%%
 grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
@@ -45,7 +46,7 @@ grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
 
 
 #%%
-# grid.plot_mesh(False)
+    # grid.plot_mesh(False)
 obj = fd.FEM3D(grid,S,R,AP,AC,BC)
 #%%
 obj.optimize_source_receiver_pos([3,3],minimum_distance_between_speakers=0.9,
@@ -57,7 +58,7 @@ obj.optimize_source_receiver_pos([3,3],minimum_distance_between_speakers=0.9,
 
 #%%
 
-obj.R.coord
+obj.plot_problem(renderer='browser')
 #%%
 obj.compute()
 #%%
@@ -65,6 +66,22 @@ obj.fem_save('test')
 #%%
 pN = obj.evaluate(R,plot=True)
 
+#%%
+
+r = obj.fitness_metric(w1=0.5, w2=0.5,fmin=20,fmax=200, dip_penalty=True, center_penalty=True, mode_penalty=True,
+                       ref_curve='mean', dB_oct=2, nOct=2, lf_boost=10, infoLoc=(0.12, -0.03),
+                       returnValues=True, plot=True, figsize=(17, 9), std_dev='assymmetric')
+#%%
+
+sf,ss = fd.FEM_3D.SBIR_SPL(pN, AC, 20, max(AC.freq))
+
+sf2,ss2 = fd.FEM_3D.SBIR_SPL(pM, AC, 20, max(AC.freq))
+
+#%%
+
+plt.semilogx(sf,ss,label='Direct')
+plt.semilogx(sf2,ss2,label='Modal')
+plt.legend()
 #%%
 
 pn_win = np.convolve(pN.ravel(),freq_win/20)
@@ -119,13 +136,13 @@ plt.legend()
 # plt.xlim([20,150])
 #%%
 
-fn = obj.eigenfrequency(20)
+fn = obj.eigenfrequency(200)
 
 # obj.modal_evaluate(49,'browser',d_range=None)
 
 #%%
 
-obj.modal_superposition(R)
+pM = obj.modal_superposition(R)
 
 #%%
 

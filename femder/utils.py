@@ -12,7 +12,10 @@ from matplotlib.ticker import FormatStrFormatter
 import matplotlib.ticker as ticker
 import scipy.signal.windows as win
 
-
+def closest_node(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
 
 def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
                  kpsh=False, valley=False, show=False, ax=None):
@@ -329,7 +332,7 @@ def SBIR(IR, t_IR, fmin, fmax, winCheck=False, spectraCheck=False, ms=32, method
         plt.plot(t_IR, window[:] * (max(IR_array[:, 0])), '-.', linewidth=5)
         plt.title('Impulse Response Windowing', fontsize=20)
         plt.xlabel('Time [s]', fontsize=20)
-        plt.xlim([t_IR[0], t_IR[int(len(t_IR) / 8)]])
+        plt.xlim([t_IR[0], 0.12])#t_IR[int(len(t_IR) / 8)]])
         # plt.xticks(np.arange(t_IR[int(peak[0])], t_IR[int(len(t_IR))], 0.032), fontsize=15)
         plt.ylabel('Amplitude [-]', fontsize=20)
         plt.legend(['Modal IR', 'SBIR IR', 'Window'], loc='best', fontsize=20)
@@ -365,8 +368,8 @@ def SBIR(IR, t_IR, fmin, fmax, winCheck=False, spectraCheck=False, ms=32, method
         plt.yticks(fontsize=15)
         plt.tight_layout(pad=3)
         plt.show()
-
-    return freq_FFT[fmin:fmax + 1], FFT_array_Pa[fmin:fmax + 1, 1], window
+    return freq_FFT, FFT_array_Pa, window
+    # return freq_FFT[closest_node(freq_FFT,fmin):closest_node(freq_FFT,fmax)+1], FFT_array_Pa[closest_node(freq_FFT,fmin):closest_node(freq_FFT,fmax)+1,1], window
 
 
 

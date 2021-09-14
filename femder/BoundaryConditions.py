@@ -81,9 +81,14 @@ class BC():
         None.
 
         """
-        if type(normalized_admittance) == int or float:
-            self.mu[domain_index] = np.ones_like(self.AC.freq)*normalized_admittance/(self.AP.c0*self.AP.rho0)
-        
+        if type(domain_index) == int:
+            if type(normalized_admittance) == int or float:
+                self.mu[domain_index] = np.ones_like(self.AC.freq)*normalized_admittance/(self.AP.c0*self.AP.rho0)
+            
+        if type(domain_index) == list:
+            for i in range(len(domain_index)):
+                self.mu[domain_index[i]] = np.ones_like(self.AC.freq)*normalized_admittance/(self.AP.c0*self.AP.rho0)
+
         # elif isinstance(normalized_admittance, np.ndarray):
             
         #     # for i in domain_index:

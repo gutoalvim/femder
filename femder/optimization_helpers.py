@@ -7,6 +7,10 @@ Created on Sat Dec 26 12:19:55 2020
 import femder as fd
 import numpy as np
 
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
 
 def r_s_coord_pair(y_value,distance_s_r):
         
@@ -164,7 +168,7 @@ def fitness_metric(complex_pressure,AC,fmin,fmax):
     
     ir = fd.IR(fs,ir_duration,fmin,fmax).compute_room_impulse_response(complex_pressure.ravel())
     t_ir = np.linspace(0,ir_duration,len(ir))
-    sbir = fd.SBIR(ir,t_ir,AC.freq[0],AC.freq[-1],method='constant')
+    sbir = fd.SBIR(ir,t_ir,AC.freq[0],AC.freq[-1],method='peak')
     sbir_freq = sbir[1]
     sbir_SPL = fd.p2SPL(sbir_freq)[fmin_indx:fmax_indx]
     modal_SPL = fd.p2SPL(complex_pressure.ravel()).ravel()[fmin_indx:fmax_indx]
@@ -177,7 +181,6 @@ def fitness_metric(complex_pressure,AC,fmin,fmax):
     return fm    
     
 
-    
 
 
 

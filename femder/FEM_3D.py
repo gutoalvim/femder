@@ -6,6 +6,10 @@ Created on Sat Nov 28 23:33:54 2020
 """
 import numpy as np
 from scipy.sparse.linalg import spsolve
+from matplotlib import ticker, gridspec, style, rcParams
+from matplotlib.ticker import FormatStrFormatter
+from matplotlib.colors import ListedColormap
+import seaborn
 # from pypardiso import spsolve
 # from scipy.sparse.linalg import gmres
 import time 
@@ -17,7 +21,7 @@ from numba import njit
 import numba
 from scipy.sparse import coo_matrix
 from scipy.sparse import csc_matrix
-
+from femder.utils import detect_peaks
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 
@@ -35,7 +39,24 @@ def suppress_stdout():
             yield
         finally:
             sys.stdout = old_stdout
-            
+ 
+def asymetric_std_dev(curve):
+    total_sum = 0
+    for i in range(len(curve)):
+        if curve[i] < np.mean(curve):
+            total_sum += abs(np.sum((curve[i] - np.mean(curve)) ** 2))
+        else:
+            total_sum += np.sum((curve[i] - np.mean(curve)) ** 1)
+    std_dev = np.sqrt(1 / (len(curve) - 1) * total_sum)
+
+    return std_dev
+
+def first_cuboid_mode(Lx,Ly,Lz,c0):
+    idx_max = np.argmax([Lx,Ly,Lz])
+    odr = np.zeros((3,))
+    odr[idx_max] = 1
+    fn = (c0/2)*np.sqrt((odr[0]/Lx)**2+(odr[1]/Ly)**2+(odr[2]/Lz)**2)
+    return fn
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
             
@@ -108,25 +129,44 @@ def fem_load(filename,ext='.pickle'):
     print('FEM loaded successfully.')
     return obj
 
-def SBIR_SPL(complex_pressure,AC,fmin,fmax):
-    fs = 44100
-    
-    fmin_indx = np.argwhere(AC.freq==fmin)[0][0]
-    fmax_indx = np.argwhere(AC.freq==fmax)[0][0]
+def SBIR_SPL(complex_pressure,rC, AC,fmin,fmax):
+    sbirspl = []
 
+    for i in range(len(rC)):
+        fs = 44100
+        
+        # fmin_indx = np.argwhere(AC.freq==fmin)[0][0]
+        # fmax_indx = np.argwhere(AC.freq==fmax)[0][0]
     
+        
+        df = (AC.freq[1]-AC.freq[0])
+        ir_duration = 1/df
+        
+        ir = fd.IR(fs,ir_duration,fmin,fmax).compute_room_impulse_response(complex_pressure[:,i].ravel())
+        t_ir = np.linspace(0,ir_duration,len(ir))
+        sbir = fd.SBIR(ir,t_ir,fmin,fmax,winCheck=False,method='constant')
+        sbir_spl= sbir[1][:,1]
+        sbir_SPL = np.real(p2SPL(sbir_spl))
+        sbirspl.append(sbir_SPL[find_nearest(sbir[0], fmin):find_nearest(sbir[0], fmax)])
+        sbir_freq = sbir[0][find_nearest(sbir[0], fmin):find_nearest(sbir[0], fmax)]
+    # print(sbirspl[0].shape)
+    plt.semilogx(sbir_freq,sbirspl[0])
+    return sbir_freq,sbirspl
+    
+def IR(complex_pressure,AC,fmin,fmax):
+    fs = 44100
+
     df = (AC.freq[-1]-AC.freq[0])/len(AC.freq)
     
     ir_duration = 1/df
     
     ir = fd.IR(fs,ir_duration,fmin,fmax).compute_room_impulse_response(complex_pressure.ravel())
     t_ir = np.linspace(0,ir_duration,len(ir))
-    sbir = fd.SBIR(ir,t_ir,AC.freq[0],AC.freq[-1],method='peak')
-    sbir_freq = sbir[1]
-    sbir_SPL = p2SPL(sbir_freq)[fmin_indx:fmax_indx]
-    sbir_freq = np.linspace(fmin,fmax,len(sbir_SPL))
     
-    return sbir_freq,sbir_SPL
+    import pytta
+    
+    r = pytta.SignalObj(ir)
+    return r
 @jit
 def coord_interpolation(nos,elem_vol,coord,pN):
     coord = np.array(coord)
@@ -184,9 +224,18 @@ def find_nearest(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
+def find_nearest2(array, value):
+    """
+    Function to find closest frequency in frequency array. Returns closest value and position index.
+    """
+    import numpy as np
+
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx], idx
 def p2SPL(p):
     SPL = 10*np.log10(0.5*p*np.conj(p)/(2e-5)**2)
-    return SPL
+    return np.real(SPL)
 
 @jit
 def Tetrahedron10N(qsi):
@@ -250,6 +299,15 @@ def find_no(nos,coord=[0,0,0]):
     # print(min(no_ind))
     return indx
 
+def mu2alpha(mu,c0,rho0):
+    mu[mu==0] = 0.0001
+    z0 = rho0*c0
+    z = 1/(mu)
+    R = (z-z0)/(z+z0)
+    alpha = 1-np.abs(R)**2
+    alpha[alpha<0] = 0
+    return alpha.flatten()
+    
 def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
     H = H_zero
     Q = Q_zero
@@ -504,6 +562,19 @@ def assemble_Q_H_4_ULTRAFAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     Q = Q.tocsc()
     
     return H,Q
+
+def compute_volume(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
+
+
+    coord_el_e = coord_el_pre(NumElemC,elem_vol,nos)
+    Ja_,GNi = Ja_pre(coord_el_e)
+    argHe_,detJa_= detJa_pre(Ja_, GNi, rho0)
+    V = []
+    for e in (range(NumElemC)):
+        detJa = detJa_[e]
+        V.append(detJa/6) 
+    return sum(V)
+
 def coord_el_pre(NumElemC,elem_vol,nos):
     coord_el_= []
     for e in range(NumElemC):
@@ -732,6 +803,28 @@ def int_tri_impedance_3gauss(coord_el):
             Ae = Ae + wtx*wty*argAe1
     
     return Ae
+
+def compute_tri_area(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_surf,nos,c0,rho0):
+    Aa = {}
+    for bl in number_ID_faces:
+        indx = np.argwhere(domain_index_surf==bl)
+        Ab = []
+        for es in range(len(elem_surf[indx])):
+            con = elem_surf[indx[es],:][0]
+            coord_el = nos[con,:]
+            xe = np.array(coord_el[:,0])
+            ye = np.array(coord_el[:,1])
+            ze = np.array(coord_el[:,2])
+            #Formula de Heron - Area do Triangulo            
+            a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
+            b = np.sqrt((xe[1]-xe[2])**2+(ye[1]-ye[2])**2+(ze[1]-ze[2])**2)
+            c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
+            p = (a+b+c)/2
+            area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
+            Ab.append(area_elm)
+        Aa[bl] = sum(Ab)
+
+    return Aa
 @jit
 def int_tri_impedance_4gauss(coord_el):
 
@@ -843,6 +936,18 @@ def solve_modal_superposition(indR,indS,F_n,Vc,Vc_T,w,qindS,N,hn,Mn,ir):
 
     return An[0]
     
+
+
+def std_obj(pR,rC):
+    std_dev = []
+    if len(rC) > 1:
+        for i in range(len(rC)):
+            std_r = np.std(pR[:,i])
+            std_dev.append(std_r)
+    else:
+        std_dev =  np.std(pR)
+    return [std_dev]
+
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
         """
@@ -1160,12 +1265,14 @@ class FEM3D:
                 self.S = sC[i]
                 if method == 'direct':
                     self.compute(timeit=False)
-                    pR = self.evaluate(self.R,False)
+                    self.pR = self.evaluate(self.R,False)
                 elif method == 'modal':
-                    pR = self.modal_superposition(self.R)
-                pR_mean = np.real(p2SPL(pR))
-                pOptim.append(pR)
-                fm = fd.fitness_metric(pR,self.AC,fmin,fmax)
+                    self.pR = self.modal_superposition(self.R)
+                pR_mean = np.real(p2SPL(self.pR))
+                pOptim.append(self.pR)
+                fm = -self.fitness_metric(w1=0.5, w2=0.5,fmin=fmin,fmax=fmax, dip_penalty=True, center_penalty=True, mode_penalty=True,
+                       ref_curve='mean', dB_oct=2, nOct=2, lf_boost=10, infoLoc=(0.12, -0.03),
+                       returnValues=True, plot=False, figsize=(17, 9), std_dev='assymmetric')
                 
                 fom.append(np.real(fm))
                 
@@ -1185,15 +1292,15 @@ class FEM3D:
                 fig = plt.figure(figsize=(12,8))
          
                 plt.semilogx(self.freq,np.real(p2SPL(pOptim[min_indx])),label='Total')
-                sbir_freq,pR_sbir = SBIR_SPL(pOptim[min_indx],self.AC,fmin,fmax)
-                plt.semilogx(sbir_freq,pR_sbir,label='SBIR')
+                # sbir_freq, sbir_spl = SBIR_SPL(self.pR,rC, self.AC, fmin,  fmax) 
+                # plt.semilogx(sbir_freq,sbir_spl,label='SBIR')
                 
                 plt.legend()
                 plt.xlabel('Frequency [Hz]')
                 plt.ylabel('SPL [dB]')
                 plt.title(f'Fitness: {fm:.3f}')
                 plt.grid()
-                plt.savefig('best_modal_Sbir.png',dpi=300, transparent=True)
+                # plt.savefig('best_modal_Sbir.png',dpi=300, transparent=True)
                 plt.show()
                 
             if print_info:
@@ -1754,10 +1861,8 @@ class FEM3D:
                        camera_angles=['floorplan', 'section', 'diagonal'], device='CPU',
                        transparent_bg=True, returnFig=False, show=True, filename=None,
                        renderer='notebook',centerc=None,eyec=None,upc=None):
-        try: 
-            import gmsh
-        except:
-            import gmsh_api.gmsh as gmsh
+        import gmsh
+
         import sys
         # from matplotlib.colors import Normalize
         import plotly
@@ -2106,6 +2211,320 @@ class FEM3D:
         print(f'\n\tElapsed time to evaluate acoustic field: {elapsed_time:.2f} minutes\n')
         if returnFig:
             return fig        
+        
+    def pytta_obj(self):
+        return IR(self.pR,self.AC,self.freq[0],self.freq[-1])
+    
+    def eyring(self):
+        V = compute_volume(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+        Areas = compute_tri_area(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+        print(f'Volume is: {V:.2f} m^3')
+        Al = []
+        Ar = []
+        for bl in self.number_ID_faces:
+            Al.append(Areas[bl]*mu2alpha(self.mu[bl],self.c0,self.rho0))
+            print(mu2alpha(self.mu[bl],self.c0,self.rho0))
+            Ar.append(Areas[bl])
+        Al = np.array(Al)
+        Area_t = np.sum(Ar)
+        alp = np.sum(Al,axis=0)/Area_t
+        print(f'Total Area is: {Area_t}')
+        print(Ar)
+        T60_sabine = 0.161*V/(np.sum(Ar)*alp)
+        plt.semilogx(self.freq,T60_sabine)
+        return T60_sabine
+        
+    def fitness_metric_rina(self, w1=0.5, w2=0.5, threshold=3, penalty=True, returnValues=True):
+        """
+        Fitness Metric.
+        w1 is the weighting for the modal response and w2 for the SBIR.
+        The threshold is the value below the average where the dips start to get penalized.
+        """
+        AC = self.AC
+        rC = self.R.coord
+        idx_min = find_nearest(self.freq, min(self.freq))
+        idx_max = find_nearest(self.freq, max(self.freq))
+    
+        # Fitness for each receiver position
+        fm = np.zeros(len(rC))
+        penalty = np.zeros(len(rC))
+        std_dev = np.std(p2SPL(self.pR),axis=0)
+        sbir_freq, sbir_spl = SBIR_SPL(self.pR,rC, AC, min(self.freq),  max(self.freq)) 
+        pRdB = p2SPL(self.pR.T)
+
+        wstd_dev = np.std(sbir_spl, axis=0)
+        
+        for index in range(len(rC)):
+            fm[index] = np.sqrt(w1 * (std_dev[index]) * 2 + w2 * (wstd_dev[index]) * 2)
+            penalty_count = 0
+            penalty_weight = 0
+            for f in range(len(pRdB[index, idx_min:idx_max + 1])):
+                idx_f = find_nearest(self.freq, idx_min + f)
+                if pRdB[index, idx_f] < np.mean(pRdB[index, idx_min:idx_max + 1]) - threshold:
+                    penalty_weight += (np.mean(pRdB[index, idx_min:idx_max + 1]) - threshold - pRdB[
+                        index, idx_f]) ** 2
+                    penalty_count += 1
+            if penalty is True:
+                if penalty_count != 0:
+                    penalty_value = np.sqrt(penalty_weight / penalty_count)
+                    fm[index] = fm[index] + penalty_value
+                    penalty[index] = penalty_value
+                    
+        if len(rC)>1:
+            pRdB_average = np.mean(pRdB,axis=0)
+            std_dev_average = np.mean(std_dev)
+            wstd_dev_average = np.mean(wstd_dev)
+    
+        else:
+            pRdB_average = pRdB.flatten()
+            std_dev_average = std_dev[0]
+            wstd_dev_average = wstd_dev[0]
+            
+        # Average Fitness
+        if wstd_dev is not None:
+            fm_average = np.sqrt(w1 * std_dev_average * 2 + w2 * wstd_dev_average * 2)
+        else:
+            print('SBIR standard deviation not available.')
+            fm_average = np.sqrt(w1 * std_dev_average ** 2)
+    
+        penalty_count = 0
+        penalty_weight = 0
+        
+        for f in range(len(pRdB_average[idx_min:idx_max + 1])):
+            idx_f = find_nearest(self.freq, idx_min + f)
+            if pRdB_average[idx_f] < np.mean(pRdB_average[idx_min:idx_max + 1]) - threshold:
+                penalty_weight += (np.mean(pRdB_average[idx_min:idx_max + 1]) - threshold - pRdB_average[
+                    idx_f]) ** 2
+                penalty_count += 1
+        if penalty is True:
+            if penalty_count != 0:
+                penalty_value = np.sqrt(penalty_weight / penalty_count)
+                fm_average = fm_average + penalty_value
+                penalty_average = penalty_value
+    
+        self.fitness = fm
+        self.fitness_average = fm_average
+    
+        if returnValues:
+            return fm, fm_average   
+        
+    def fitness_metric(self, w1=0.5, w2=0.5,fmin=20,fmax=200, dip_penalty=True, center_penalty=True, mode_penalty=True,
+                       ref_curve='mean', dB_oct=2, nOct=2, lf_boost=10, infoLoc=(0.12, -0.03),
+                       returnValues=False, plot=False, figsize=(17, 9), std_dev='symmetric'):
+        """
+        Fitness Metric.
+        w1 is the weighting for the modal response and w2 for the SBIR.
+        The threshold is the value below the average where the dips start to get penalized.
+        """
+        from scipy import interpolate
+        from itertools import groupby
+        
+        AC = self.AC
+        rC = self.R.coord
+        std_dev = np.std(p2SPL(self.pR),axis=0)
+        
+        self.fmin = fmin
+        self.fmax = fmax
+        self.wfreq, sbir_spl = SBIR_SPL(self.pR,rC, AC, fmin,  fmax) 
+        xmin, idx_min = find_nearest2(self.freq, self.fmin)
+        xmax, idx_max = find_nearest2(self.freq, self.fmax)
+        wxmin, widx_min = find_nearest2(self.wfreq, self.fmin)
+        wxmax, widx_max = find_nearest2(self.wfreq, self.fmax)
+        freq = self.freq[idx_min:idx_max + 1]
+        pRdB = p2SPL(self.pR.T)
+        
+        std_dev = np.std(p2SPL(self.pR),axis=0)
+        wstd_dev = np.std(sbir_spl, axis=0)
+        modes = [first_cuboid_mode(max(self.nos[:, 0]), max(self.nos[:, 1]), max(self.nos[:, 2]),self.c0)]
+        if len(rC)>1:
+            self.hjwdB_average_rLw = np.mean(pRdB,axis=0)
+            self.whjwdB_average_rLw = np.mean(sbir_spl,axis=0)
+            self.std_dev_average_rLw  = np.mean(std_dev)
+            self.wstd_dev_average_rLw = np.mean(wstd_dev)
+    
+        else:
+            self.hjwdB_average_rLw = pRdB.flatten()
+            self.whjwdB_average_rLw = np.array(sbir_spl).flatten()
+            self.std_dev_average_rLw = std_dev[0]
+            self.wstd_dev_average_rLw = wstd_dev[0]
+            
+        # Reference curve
+        # if ref_curve == 'slope':
+        #     oct_freq, oct_fr = self.oct_filter(plot=False, nOct=nOct, correction='max')
+        #     reference_curve = [np.mean(self.hjwdB_average_rLw[idx_min:idx_max + 1]) for i in range(len(oct_freq))]
+        #     for i in range(len(reference_curve)):
+        #         reference_curve[i] = reference_curve[i] + lf_boost
+        #         lf_boost -= dB_oct
+        #         if lf_boost < 0:
+        #             lf_boost = 0
+        #     f = interpolate.interp1d(oct_freq, reference_curve)
+        #     reference_curve = f(self.freq[idx_min:idx_max + 1])
+        if ref_curve == 'mean':
+            reference_curve = [
+                np.mean(self.hjwdB_average_rLw[idx_min:idx_max + 1]) for i in
+                range(len(self.freq[idx_min:idx_max + 1]))
+            ]
+
+        # Average Fitness rLw
+        curve = np.copy(self.hjwdB_average_rLw[idx_min:idx_max + 1])
+        asym_std_dev = asymetric_std_dev(curve)
+        if self.wstd_dev_average_rLw is not None:
+            if std_dev == 'asymmetric':
+                fm_average_rLw = np.sqrt(w1 * asym_std_dev ** 2 + w2 * self.wstd_dev_average_rLw ** 2)
+            else:
+                fm_average_rLw = np.sqrt(w1 * self.std_dev_average_rLw ** 2 + w2 * self.wstd_dev_average_rLw ** 2)
+
+        else:
+            print('SBIR standard deviation not available.')
+            if std_dev == 'asymmetric':
+                fm_average_rLw = np.sqrt(w1 * asym_std_dev ** 2)
+            else:
+                fm_average_rLw = np.sqrt(w1 * self.std_dev_average_rLw ** 2)
+
+        fm_average_rLw = 100 / (fm_average_rLw)
+        axial_penalty = 0
+
+        delta_f = 10
+        if mode_penalty:
+            for i in range(len(modes)):
+                peak_mode = detect_peaks(curve, mph=np.mean(curve), show=False, valley=False)[0]
+                if modes[i] > self.fmin:
+                    axial_mode = modes[i]
+                    if self.freq[peak_mode + idx_min] - delta_f < axial_mode < self.freq[
+                        peak_mode + idx_min] + delta_f:
+                        diff = curve[peak_mode] - reference_curve[peak_mode]
+                        axial_penalty = np.sqrt(diff) if diff >= 0 else -np.sqrt(abs(diff))
+                        #                         axial_penalty = 0.5 * diff
+                        break
+                    else:
+                        peak_mode = detect_peaks(curve, mph=np.mean(curve), show=False, valley=False)[0]
+        dips_depth = np.zeros_like(curve)
+        dips_bandwidth = np.zeros_like(curve)
+        dips_freq_weight = np.zeros_like(curve)
+        curve = self.hjwdB_average_rLw[peak_mode:idx_max + 1]
+        for idx_f in range(len(curve)):
+            if curve[idx_f] < reference_curve[idx_f]:
+                dips_depth[idx_f] = reference_curve[idx_f] - curve[idx_f]
+                #                 dips_depth[idx_f] = (reference_curve[idx_f] - curve[idx_f] / np.sqrt(freq[idx_f]))
+                dips_bandwidth[idx_f] = 1
+                dips_freq_weight[idx_f] = np.log10(freq[idx_f])
+
+        self.penalty = 0
+        if dip_penalty is True:
+            depth = np.asarray(
+                [sum(val) for keys, val in groupby(dips_depth.tolist(), key=lambda x: x != 0) if keys != 0])
+            bandwidth = np.asarray([sum(val) for keys, val in groupby(dips_bandwidth.tolist(),
+                                                                      key=lambda x: x != 0) if keys != 0])
+            freq_weight = np.asarray([sum(val) for keys, val in groupby(dips_freq_weight.tolist(),
+                                                                        key=lambda x: x != 0) if keys != 0])
+
+            penalty_value = np.sqrt(depth * freq_weight * bandwidth)
+            self.penalty = penalty_value.sum() / bandwidth.sum()
+        else:
+            self.penalty = 0
+
+        # Penalty Distance
+        dist_penalty = 0
+        if center_penalty:
+            threshold = max(self.nos[:, 1]) / 20
+            if max(self.nos[:, 1]) / 2 - threshold <= rC[0, 1] <= max(
+                    self.nos[:, 1]) / 2 + threshold:
+                dist_penalty = (threshold - (abs(max(self.nos[:, 1]) / 2 - rC[0, 1]))) * max(
+                    self.nos[:, 1]) / 2
+            self.penalty += dist_penalty
+
+        # First order mode penalty
+
+            self.penalty += -axial_penalty
+
+        fm_average_rLw = fm_average_rLw - self.penalty
+
+        if fm_average_rLw <= 0:
+            fm_average_rLw = 0.1
+
+        self.fitness = fm_average_rLw
+
+        if plot:
+            ymax = max(self.hjwdB_average_rLw)+10
+            ymin = min(self.hjwdB_average_rLw)-20
+            for i in range(len(rC)):
+                while max(pRdB[i, idx_min:idx_max + 1]) > ymax or \
+                        min(pRdB[i, idx_min:idx_max + 1]) < ymin:
+                    if max(pRdB[i, idx_min:idx_max + 1]) > ymax:
+                        ymax += 5
+                        ymin += 2
+                    if min(pRdB[i, idx_min:idx_max + 1]) < ymin:
+                        ymax -= 2
+                        ymin -= 5
+
+            fig, ax = plt.subplots(figsize=figsize)
+
+            curve = self.hjwdB_average_rLw[idx_min:idx_max + 1]
+            ax.semilogx(freq, curve, linewidth=8, label=f'Average WMR rLW | SD: {np.std(curve):.2f} [dB]')
+
+            ax.semilogx(self.wfreq[widx_min:widx_max + 1], self.whjwdB_average_rLw[widx_min:widx_max + 1],
+                        linewidth=6, label=f'Average SBIR rLW| SD: '
+                                           f'{np.std(self.whjwdB_average_rLw[widx_min:widx_max + 1]):.2f} [dB]')
+            ax.semilogx(freq, reference_curve, label='Reference Curve [dB]', color='r', linestyle=':', alpha=0.8,
+                        linewidth=2)
+            ax.fill_between(freq, curve, reference_curve, where=(reference_curve > curve), color='r', alpha=0.5)
+            ax.set_xlim([xmin, xmax])
+            ax.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax.tick_params(which='minor', length=5)  # Set major and minor ticks to same length
+            ax.tick_params(which='both', labelsize=15)
+            ax.set_xlabel('Frequency [Hz]', fontsize=18)
+            ax.set_ylabel('SPL [dB ref. 20 $\mu$Pa]', fontsize=18)
+            ax.set_title('Fitness Metric', fontsize=20, pad=10)
+            ax.grid('on')
+            ax.legend(bbox_to_anchor=(0.5, -0.1), ncol=3, fontsize=14, loc="upper center")
+            ax.set_ylim([ymin, ymax])
+
+            ax2 = ax.twiny()
+            ax2.semilogx(self.freq[idx_min:idx_max + 1], [0 for freq in self.freq[idx_min:idx_max + 1]], alpha=0)
+            ax2.set_xlim([xmin, xmax])
+            ax2.tick_params(axis='y', which='both', right=False, labelright=False)
+            ax2.tick_params(axis='x', which='major', labelsize=15, rotation=90)
+            ax2.tick_params(axis='x', which='minor', labeltop=False)
+            frequencies = []
+
+            delta = self.std_dev_average_rLw / 2
+            curve = np.copy(self.hjwdB_average_rLw[idx_min:idx_max + 1])
+            peak_frequencies = []
+            peaks = detect_peaks(curve, mph=np.mean(curve) + delta,
+                                 show=False, valley=False)
+            dips = detect_peaks(curve, mph=np.mean(curve) - delta,
+                                show=False, valley=True)
+            # for peak in peaks:
+            #     peak = int((peak + ((self.fmin - self.fminOverhead) / self.df)))
+            #     peak_frequencies.append(self.freq[peak])
+
+            num_colors = len(modes)
+            cm = ListedColormap(seaborn.color_palette("bright", num_colors))
+            colors = [cm(1. * i / num_colors) for i in range(num_colors)]
+            j = 0
+            for val in modes:
+                i = 0
+
+                if val <= self.fmax:
+                    frequencies.append(round(val))
+                    if i == 0:
+                        ax2.axvline(x=round(val), linestyle='--', color=colors[j], linewidth=3, label=round(val))
+                    else:
+                        ax2.axvline(x=round(val), linestyle='--', color=colors[j], linewidth=3)
+                    i += 1
+                j += 1
+
+                ax2.set_xticks([freq for freq in frequencies])
+                ax2.set_xticklabels([str(freq) for freq in frequencies])
+                ax2.legend(fontsize=14, ncol=3, loc='lower center', title='Cuboid Room Modes', title_fontsize=15)
+
+            if mode_penalty:
+                text_y = abs(curve[peak_mode] - reference_curve[peak_mode]) / 2
+                text_y = -text_y if curve[peak_mode] < reference_curve[peak_mode] else text_y
+
+        if returnValues:
+            return fm_average_rLw
     def fem_save(self, filename=time.strftime("%Y%m%d-%H%M%S"), ext = ".pickle"):
         """
         Saves FEM3D simulation into a pickle file.
