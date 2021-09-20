@@ -1270,9 +1270,9 @@ class FEM3D:
                     self.pR = self.modal_superposition(self.R)
                 pR_mean = np.real(p2SPL(self.pR))
                 pOptim.append(self.pR)
-                fm = -self.fitness_metric(w1=0.5, w2=0.5,fmin=fmin,fmax=fmax, dip_penalty=True, center_penalty=True, mode_penalty=True,
+                fm = 100/self.fitness_metric(w1=0.8, w2=0.2,fmin=fmin,fmax=fmax, dip_penalty=True, center_penalty=True, mode_penalty=True,
                        ref_curve='mean', dB_oct=2, nOct=2, lf_boost=10, infoLoc=(0.12, -0.03),
-                       returnValues=True, plot=False, figsize=(17, 9), std_dev='assymmetric')
+                       returnValues=True, plot=False, figsize=(17, 9), std_dev='symmetric')
                 
                 fom.append(np.real(fm))
                 
@@ -1298,7 +1298,7 @@ class FEM3D:
                 plt.legend()
                 plt.xlabel('Frequency [Hz]')
                 plt.ylabel('SPL [dB]')
-                plt.title(f'Fitness: {fm:.3f}')
+                plt.title(f'Fitness: {fom[min_indx]:.3f}')
                 plt.grid()
                 # plt.savefig('best_modal_Sbir.png',dpi=300, transparent=True)
                 plt.show()
