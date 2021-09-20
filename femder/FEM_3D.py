@@ -1204,6 +1204,7 @@ class FEM3D:
                                      max_distance_from_backwall=1.5,neigs=50,
                                      plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
                                      print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal'],timeit=True):
+        print('Initializing optimization')
         then = time.time()
         sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,
                                  max_distance_from_wall=max_distance_from_wall,
