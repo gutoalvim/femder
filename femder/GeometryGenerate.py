@@ -105,7 +105,8 @@ class GeometryGenerator():
         
         gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.S_cale)/self.fmax/self.num_freq)
         gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.S_cale)/self.fmax/self.num_freq)
-        
+        gmsh.option.setNumber("Mesh.Algorithm", 1)
+
         # print((self.c0*self.S_cale)/self.fmax/self.num_freq)
         lc = 0#(self.c0*self.S_cale)/self.fmax/self.num_freq
         tg = gmsh.model.occ.getEntities(3)
