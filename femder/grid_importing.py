@@ -55,7 +55,7 @@ class GridImport():
         os.remove(path_name+'/current_mesh.msh')
         
 class GridImport3D:
-    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3):
+    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3,add_rng=False):
         
         self.R = R
         self.S = S
@@ -81,7 +81,8 @@ class GridImport3D:
             # gmsh.model.occ.dilate(dT,0,0,0,1/scale,1/scale,1/scale)
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.scale)/self.fmax/self.num_freq)
-            
+            gmsh.option.setNumber("Mesh.Algorithm", 1)
+
             # print((self.c0*self.scale)/self.fmax/self.num_freq)
             lc = 0#(self.c0*self.scale)/self.fmax/self.num_freq
             tg = gmsh.model.occ.getEntities(3)
@@ -226,6 +227,10 @@ class GridImport3D:
         
         self.NumNosC = len(self.nos)
         self.NumElemC = len(self.elem_vol)
+        
+        if add_rng == True:
+            rng_nos = 0.1*np.random.rand(len(self.nos[:,0]),len(self.nos[0,:]))
+            self.nos = self.nos +rng_nos
         
     def plot_mesh(self,onlySurface = True):
         import gmsh
