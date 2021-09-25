@@ -230,7 +230,7 @@ class GridImport3D:
         
         if add_rng == True:
             rng_nos = 0.1*np.random.rand(len(self.nos[:,0]),len(self.nos[0,:]))
-            self.nos = self.nos +rng_nos
+            self.nos = self.nos + rng_nos
         
     def plot_mesh(self,onlySurface = True):
         import gmsh

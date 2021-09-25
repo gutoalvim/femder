@@ -1,7 +1,5 @@
 Merge "cplx_room.brep";
-Physical Volume(1) = {1};
 //+
-Physical Surface(2) = {4};
+Physical Volume(24) = {1};
 //+
-Physical Surface(3) = {2, 7, 1, 6, 10, 3, 9, 8, 5};
-
+Physical Surface(2) = {1, 3, 6, 2, 8, 5, 7, 10, 9, 4};

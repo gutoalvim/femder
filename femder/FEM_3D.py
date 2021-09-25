@@ -1199,14 +1199,14 @@ class FEM3D:
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
                 
-    def optimize_source_receiver_pos(self,num_grid_pts,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
+    def optimize_source_receiver_pos(self,num_grid_pts,star_average=True,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
                                      minimum_distance_between_speakers=1.2,speaker_receiver_height=1.2,min_distance_from_backwall=0.6,
                                      max_distance_from_backwall=1.5,neigs=50,
                                      plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
                                      print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal'],timeit=True):
         print('Initializing optimization')
         then = time.time()
-        sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,
+        sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,star_average=star_average,
                                  max_distance_from_wall=max_distance_from_wall,
                                  minimum_distance_between_speakers=minimum_distance_between_speakers,
                                  speaker_receiver_height = speaker_receiver_height,
@@ -1464,7 +1464,7 @@ class FEM3D:
                 
         return self.F_n
         
-    def modal_superposition(self,R):
+    def modal_superposition(self,R,plot=False):
         self.R = R
         Mn = np.diag(self.Vc.T@self.Q@self.Vc)
         
@@ -1519,7 +1519,26 @@ class FEM3D:
                                                    numba.complex64(qindS),(N),
                                                    numba.complex64(hn),numba.complex64(Mn),ir)
                     pmN.append(pf)
-            self.pm = np.array(pmN)
+            self.pm = np.array(pmN).reshape((len(self.freq),-1))
+            if plot:
+                plt.style.use('seaborn-notebook')
+                plt.figure(figsize=(5*1.62,5))
+                if len(self.pm[0,:]) > 1:
+                    linest = ':'
+                else:
+                    linest = '-'
+                for i in range(len(self.R.coord)):
+                    # self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
+                    plt.semilogx(self.freq,p2SPL(self.pm[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[i,:]}m')
+                    
+                if len(self.R.coord) > 1:
+                    plt.semilogx(self.freq,np.mean(p2SPL(self.pm),axis=1),label='Average',linewidth = 5)
+                
+                plt.grid()
+                plt.legend()
+                plt.xlabel('Frequency[Hz]')
+                plt.ylabel('SPL [dB]')
+                # plt.show()
             
         return self.pm
             
@@ -2322,6 +2341,8 @@ class FEM3D:
         
         AC = self.AC
         rC = self.R.coord
+        if self.pR is None and self.pm is not None:
+            self.pR = self.pm
         std_dev = np.std(p2SPL(self.pR),axis=0)
         
         self.fmin = fmin

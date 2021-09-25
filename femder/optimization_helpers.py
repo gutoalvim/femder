@@ -95,7 +95,9 @@ def r_s_positions(grid,grid_pts,bias):
         So.append(S)
     return So,Ro
 
-def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distance_from_wall=0.6,speaker_receiver_height=1.2,min_distance_from_backwall=0.6,max_distance_from_backwall=1.5):
+def r_s_from_grid(grid,grid_pts,star_average=True,minimum_distance_between_speakers=1.2,
+                  max_distance_from_wall=0.6,speaker_receiver_height=1.2,
+                  min_distance_from_backwall=0.6,max_distance_from_backwall=1.5):
     
     ymax = np.amax(grid.nos[:,1])
     
@@ -141,14 +143,25 @@ def r_s_from_grid(grid,grid_pts,minimum_distance_between_speakers=1.2,max_distan
     
     Ro = []
     So = []
-    for i in range(len(r_coords)):
-        
-        R = fd.Receiver(coord = [r_coords[i]])
-        Ro.append(R)
-        S = fd.Source()
-        S.coord = np.array([[s_coords_L[i,:]],[s_coords_R[i,:]]])
-        S.q = np.array([[0.0001],[0.0001]])
-        So.append(S)
+    if star_average:
+        for i in range(len(r_coords)):
+            
+            R = fd.Receiver()
+            R.star(r_coords[i], 0.15)
+            Ro.append(R)
+            S = fd.Source()
+            S.coord = np.array([[s_coords_L[i,:]],[s_coords_R[i,:]]])
+            S.q = np.array([[0.0001],[0.0001]])
+            So.append(S)
+    else:
+        for i in range(len(r_coords)):
+            
+            R = fd.Receiver(coord = [r_coords[i]])
+            Ro.append(R)
+            S = fd.Source()
+            S.coord = np.array([[s_coords_L[i,:]],[s_coords_R[i,:]]])
+            S.q = np.array([[0.0001],[0.0001]])
+            So.append(S)
     return So,Ro
 
 
