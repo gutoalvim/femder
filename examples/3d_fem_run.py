@@ -35,12 +35,12 @@ tmm.compute()
 # BC.normalized_admittance(3,tmm.y_norm)
 # BC.mu[2] = (tmm.y)
 # BC.delany(3,10900,0.15)
-BC.normalized_admittance(3,0.02)
 BC.normalized_admittance(2,0.02)
+# BC.normalized_admittance(,0.02)
 
 # BC.rigid(2)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S,R,fmax = 200,num_freq=6,scale=1,order=1)
+grid = fd.GridImport3D(AP,path_to_geo,S=None,R=None,fmax = 200,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
 
 

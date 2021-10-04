@@ -131,16 +131,16 @@ def fem_load(filename,ext='.pickle'):
 
 def SBIR_SPL(complex_pressure,rC, AC,fmin,fmax):
     sbirspl = []
-
-    for i in range(len(rC)):
-        fs = 44100
-        
-        # fmin_indx = np.argwhere(AC.freq==fmin)[0][0]
-        # fmax_indx = np.argwhere(AC.freq==fmax)[0][0]
+    fs = 44100
     
-        
-        df = (AC.freq[1]-AC.freq[0])
-        ir_duration = 1/df
+    # fmin_indx = np.argwhere(AC.freq==fmin)[0][0]
+    # fmax_indx = np.argwhere(AC.freq==fmax)[0][0]
+
+    
+    df = (AC.freq[1]-AC.freq[0])
+    ir_duration = 1/df
+    for i in range(len(rC)):
+
         
         ir = fd.IR(fs,ir_duration,fmin,fmax).compute_room_impulse_response(complex_pressure[:,i].ravel())
         t_ir = np.linspace(0,ir_duration,len(ir))
@@ -1204,6 +1204,56 @@ class FEM3D:
                                      max_distance_from_backwall=1.5,neigs=50,
                                      plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
                                      print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal'],timeit=True):
+        """
+        Implements a search for the best source-receiver configuration in a control room symmetric in the y axis.
+
+        Parameters
+        ----------
+        num_grid_pts : TYPE
+            DESCRIPTION.
+        star_average : TYPE, optional
+            DESCRIPTION. The default is True.
+        fmin : TYPE, optional
+            DESCRIPTION. The default is 20.
+        fmax : TYPE, optional
+            DESCRIPTION. The default is 200.
+        max_distance_from_wall : TYPE, optional
+            DESCRIPTION. The default is 0.5.
+        method : TYPE, optional
+            DESCRIPTION. The default is 'direct'.
+        minimum_distance_between_speakers : TYPE, optional
+            DESCRIPTION. The default is 1.2.
+        speaker_receiver_height : TYPE, optional
+            DESCRIPTION. The default is 1.2.
+        min_distance_from_backwall : TYPE, optional
+            DESCRIPTION. The default is 0.6.
+        max_distance_from_backwall : TYPE, optional
+            DESCRIPTION. The default is 1.5.
+        neigs : TYPE, optional
+            DESCRIPTION. The default is 50.
+        plot_geom : TYPE, optional
+            DESCRIPTION. The default is False.
+        renderer : TYPE, optional
+            DESCRIPTION. The default is 'notebook'.
+        plot_evaluate : TYPE, optional
+            DESCRIPTION. The default is False.
+        plotBest : TYPE, optional
+            DESCRIPTION. The default is False.
+        print_info : TYPE, optional
+            DESCRIPTION. The default is True.
+        saveFig : TYPE, optional
+            DESCRIPTION. The default is False.
+        camera_angles : TYPE, optional
+            DESCRIPTION. The default is ['floorplan', 'section', 'diagonal'].
+        timeit : TYPE, optional
+            DESCRIPTION. The default is True.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
         print('Initializing optimization')
         then = time.time()
         sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,star_average=star_average,
@@ -1465,6 +1515,22 @@ class FEM3D:
         return self.F_n
         
     def modal_superposition(self,R,plot=False):
+        """
+        Implements modal superposition method to calculate FRF for source-recevier configuration.
+
+        Parameters
+        ----------
+        R : TYPE
+            DESCRIPTION.
+        plot : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
         self.R = R
         Mn = np.diag(self.Vc.T@self.Q@self.Vc)
         
@@ -1544,6 +1610,35 @@ class FEM3D:
             
     def modal_evaluate(self,freq,renderer='notebook',d_range = None,saveFig=False,filename=None,
                      camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,extension='png'):
+        """
+        Plot modal pressure on the boundaries
+
+        Parameters
+        ----------
+        freq : TYPE
+            DESCRIPTION.
+        renderer : TYPE, optional
+            DESCRIPTION. The default is 'notebook'.
+        d_range : TYPE, optional
+            DESCRIPTION. The default is None.
+        saveFig : TYPE, optional
+            DESCRIPTION. The default is False.
+        filename : TYPE, optional
+            DESCRIPTION. The default is None.
+        camera_angles : TYPE, optional
+            DESCRIPTION. The default is ['floorplan', 'section', 'diagonal'].
+        transparent_bg : TYPE, optional
+            DESCRIPTION. The default is True.
+        title : TYPE, optional
+            DESCRIPTION. The default is None.
+        extension : TYPE, optional
+            DESCRIPTION. The default is 'png'.
+
+        Returns
+        -------
+        None.
+
+        """
         import plotly.graph_objs as go
         
         fi = find_nearest((np.real(self.F_n)),freq)
@@ -1881,6 +1976,92 @@ class FEM3D:
                        camera_angles=['floorplan', 'section', 'diagonal'], device='CPU',
                        transparent_bg=True, returnFig=False, show=True, filename=None,
                        renderer='notebook',centerc=None,eyec=None,upc=None):
+        """
+        Plots pressure field in boundaries and sections.
+
+        Parameters
+        ----------
+        Pmin : TYPE, optional
+            DESCRIPTION. The default is None.
+        frequencies : TYPE, optional
+            DESCRIPTION. The default is [60].
+        Pmax : TYPE, optional
+            DESCRIPTION. The default is None.
+        axis : TYPE, optional
+            DESCRIPTION. The default is ['xy', 'yz', 'xz', 'boundary'].
+        axis_visibility : TYPE, optional
+            DESCRIPTION. The default is {'xy': True, 'yz': True, 'xz': 'legendonly', 'boundary': True}.
+        coord_axis : TYPE, optional
+            DESCRIPTION. The default is {'xy': None, 'yz': None, 'xz': None, 'boundary': None}.
+        dilate_amount : TYPE, optional
+            DESCRIPTION. The default is 0.9.
+        view_planes : TYPE, optional
+            DESCRIPTION. The default is False.
+        gridsize : TYPE, optional
+            DESCRIPTION. The default is 0.1.
+        gridColor : TYPE, optional
+            DESCRIPTION. The default is "rgb(230, 230, 255)".
+        opacity : TYPE, optional
+            DESCRIPTION. The default is 0.2.
+        opacityP : TYPE, optional
+            DESCRIPTION. The default is 1.
+        hide_dots : TYPE, optional
+            DESCRIPTION. The default is False.
+        figsize : TYPE, optional
+            DESCRIPTION. The default is (950, 800).
+        showbackground : TYPE, optional
+            DESCRIPTION. The default is True.
+        showlegend : TYPE, optional
+            DESCRIPTION. The default is True.
+        showedges : TYPE, optional
+            DESCRIPTION. The default is True.
+        colormap : TYPE, optional
+            DESCRIPTION. The default is 'jet'.
+        saveFig : TYPE, optional
+            DESCRIPTION. The default is False.
+        extension : TYPE, optional
+            DESCRIPTION. The default is 'png'.
+        room_opacity : TYPE, optional
+            DESCRIPTION. The default is 0.3.
+        colorbar : TYPE, optional
+            DESCRIPTION. The default is True.
+        showticklabels : TYPE, optional
+            DESCRIPTION. The default is True.
+        info : TYPE, optional
+            DESCRIPTION. The default is True.
+        title : TYPE, optional
+            DESCRIPTION. The default is True.
+        axis_labels : TYPE, optional
+            DESCRIPTION. The default is ['(X) Width [m]', '(Y) Length [m]', '(Z) Height [m]'].
+        showgrid : TYPE, optional
+            DESCRIPTION. The default is True.
+        camera_angles : TYPE, optional
+            DESCRIPTION. The default is ['floorplan', 'section', 'diagonal'].
+        device : TYPE, optional
+            DESCRIPTION. The default is 'CPU'.
+        transparent_bg : TYPE, optional
+            DESCRIPTION. The default is True.
+        returnFig : TYPE, optional
+            DESCRIPTION. The default is False.
+        show : TYPE, optional
+            DESCRIPTION. The default is True.
+        filename : TYPE, optional
+            DESCRIPTION. The default is None.
+        renderer : TYPE, optional
+            DESCRIPTION. The default is 'notebook'.
+        centerc : TYPE, optional
+            DESCRIPTION. The default is None.
+        eyec : TYPE, optional
+            DESCRIPTION. The default is None.
+        upc : TYPE, optional
+            DESCRIPTION. The default is None.
+
+        Returns
+        -------
+        fig : TYPE
+            DESCRIPTION.
+
+        """
         import gmsh
 
         import sys
@@ -2235,7 +2416,16 @@ class FEM3D:
     def pytta_obj(self):
         return IR(self.pR,self.AC,self.freq[0],self.freq[-1])
     
-    def eyring(self):
+    def sabine_tr(self):
+        """
+        Calculates TR with Sabine's equation.
+
+        Returns
+        -------
+        T60_sabine : TYPE
+            DESCRIPTION.
+
+        """
         V = compute_volume(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
         Areas = compute_tri_area(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
         print(f'Volume is: {V:.2f} m^3')
@@ -2254,80 +2444,7 @@ class FEM3D:
         plt.semilogx(self.freq,T60_sabine)
         return T60_sabine
         
-    def fitness_metric_rina(self, w1=0.5, w2=0.5, threshold=3, penalty=True, returnValues=True):
-        """
-        Fitness Metric.
-        w1 is the weighting for the modal response and w2 for the SBIR.
-        The threshold is the value below the average where the dips start to get penalized.
-        """
-        AC = self.AC
-        rC = self.R.coord
-        idx_min = find_nearest(self.freq, min(self.freq))
-        idx_max = find_nearest(self.freq, max(self.freq))
-    
-        # Fitness for each receiver position
-        fm = np.zeros(len(rC))
-        penalty = np.zeros(len(rC))
-        std_dev = np.std(p2SPL(self.pR),axis=0)
-        sbir_freq, sbir_spl = SBIR_SPL(self.pR,rC, AC, min(self.freq),  max(self.freq)) 
-        pRdB = p2SPL(self.pR.T)
 
-        wstd_dev = np.std(sbir_spl, axis=0)
-        
-        for index in range(len(rC)):
-            fm[index] = np.sqrt(w1 * (std_dev[index]) * 2 + w2 * (wstd_dev[index]) * 2)
-            penalty_count = 0
-            penalty_weight = 0
-            for f in range(len(pRdB[index, idx_min:idx_max + 1])):
-                idx_f = find_nearest(self.freq, idx_min + f)
-                if pRdB[index, idx_f] < np.mean(pRdB[index, idx_min:idx_max + 1]) - threshold:
-                    penalty_weight += (np.mean(pRdB[index, idx_min:idx_max + 1]) - threshold - pRdB[
-                        index, idx_f]) ** 2
-                    penalty_count += 1
-            if penalty is True:
-                if penalty_count != 0:
-                    penalty_value = np.sqrt(penalty_weight / penalty_count)
-                    fm[index] = fm[index] + penalty_value
-                    penalty[index] = penalty_value
-                    
-        if len(rC)>1:
-            pRdB_average = np.mean(pRdB,axis=0)
-            std_dev_average = np.mean(std_dev)
-            wstd_dev_average = np.mean(wstd_dev)
-    
-        else:
-            pRdB_average = pRdB.flatten()
-            std_dev_average = std_dev[0]
-            wstd_dev_average = wstd_dev[0]
-            
-        # Average Fitness
-        if wstd_dev is not None:
-            fm_average = np.sqrt(w1 * std_dev_average * 2 + w2 * wstd_dev_average * 2)
-        else:
-            print('SBIR standard deviation not available.')
-            fm_average = np.sqrt(w1 * std_dev_average ** 2)
-    
-        penalty_count = 0
-        penalty_weight = 0
-        
-        for f in range(len(pRdB_average[idx_min:idx_max + 1])):
-            idx_f = find_nearest(self.freq, idx_min + f)
-            if pRdB_average[idx_f] < np.mean(pRdB_average[idx_min:idx_max + 1]) - threshold:
-                penalty_weight += (np.mean(pRdB_average[idx_min:idx_max + 1]) - threshold - pRdB_average[
-                    idx_f]) ** 2
-                penalty_count += 1
-        if penalty is True:
-            if penalty_count != 0:
-                penalty_value = np.sqrt(penalty_weight / penalty_count)
-                fm_average = fm_average + penalty_value
-                penalty_average = penalty_value
-    
-        self.fitness = fm
-        self.fitness_average = fm_average
-    
-        if returnValues:
-            return fm, fm_average   
-        
     def fitness_metric(self, w1=0.5, w2=0.5,fmin=20,fmax=200, dip_penalty=True, center_penalty=True, mode_penalty=True,
                        ref_curve='mean', dB_oct=2, nOct=2, lf_boost=10, infoLoc=(0.12, -0.03),
                        returnValues=False, plot=False, figsize=(17, 9), std_dev='symmetric'):
@@ -2347,7 +2464,7 @@ class FEM3D:
         
         self.fmin = fmin
         self.fmax = fmax
-        self.wfreq, sbir_spl = SBIR_SPL(self.pR,rC, AC, fmin,  fmax) 
+        self.wfreq, sbir_spl = SBIR_SPL(self.pR, rC, AC, fmin, fmax) 
         xmin, idx_min = find_nearest2(self.freq, self.fmin)
         xmax, idx_max = find_nearest2(self.freq, self.fmax)
         wxmin, widx_min = find_nearest2(self.wfreq, self.fmin)
