@@ -1338,6 +1338,7 @@ class FEM3D:
             
             # plt.savefig('optim_cand.png',dpi=300)
             min_indx = np.argmin(np.array(fom))
+            self.min_indx = min_indx
 
             if plotBest:
                 fig = plt.figure(figsize=(12,8))
