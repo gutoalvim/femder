@@ -55,7 +55,7 @@ class GridImport():
         os.remove(path_name+'/current_mesh.msh')
         
 class GridImport3D:
-    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3,add_rng=False):
+    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3,center_geom=False,add_rng=False):
         
         self.R = R
         self.S = S
@@ -73,7 +73,8 @@ class GridImport3D:
         import os
         filename, file_extension = os.path.splitext(path_to_geo)
         # print(file_extension)
-        if file_extension == '.geo' or file_extension == '.geo_unrolled' or file_extension == '.brep':
+        file_list = ['.geo','.geo_unrolled','.brep','.igs','.iges','.stp','.step']
+        if file_extension in file_list:
             gmsh.initialize(sys.argv)
             gmsh.open(self.path_to_geo) # Open msh
     
@@ -181,7 +182,11 @@ class GridImport3D:
                 self.domain_index_vol = []
             # gmsh.model.mesh.optimize()
             gmsh.model.occ.synchronize()
-            
+                    
+            if center_geom == True:
+                center_coord = np.mean(self.nos,axis=0)
+                self.nos = self.nos - center_coord
+        
             if plot:
                 gmsh.fltk.run()                 
             # gmsh.fltk.run()
@@ -194,13 +199,12 @@ class GridImport3D:
             # msh = meshio.read(path_name+'/current_mesh2.vtk')
         elif file_extension=='.msh' or file_extension=='vtk':
             msh = meshio.read(path_to_geo)
-            
             self.msh = msh
             # os.remove(path_name+'/current_mesh.msh')
             
-            
-            if order == 1:
-                self.nos = msh.points/scale
+            self.nos = msh.points/scale
+            if self.order  == 1:
+                
                 self.elem_surf = msh.cells_dict["triangle"]
                 self.elem_vol = msh.cells_dict["tetra"]
                 
@@ -208,26 +212,27 @@ class GridImport3D:
                 # self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra"]
                 self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
                 self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
+            elif self.order  == 2 and file_extension=='.msh':
+                
+                self.elem_surf = msh.cells_dict["triangle6"]
+                self.elem_vol = msh.cells_dict["tetra10"]
+                
+                self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle6"]
+                self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra10"]
+                
             # elif order == 2:
-            #     self.elem_surf = msh.cells_dict["triangle6"]
-            #     self.elem_vol = msh.cells_dict["tetra10"]
+            #     # self.elem_surf = msh.cells_dict["triangle6"]
+            #     # self.elem_vol = msh.cells_dict["tetra10"]
                 
-            #     self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle6"]
-            #     self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra10"]
-                
-            elif order == 2:
-                # self.elem_surf = msh.cells_dict["triangle6"]
-                # self.elem_vol = msh.cells_dict["tetra10"]
-                
-                self.domain_index_surf = msh.cell_data_dict["CellEntityIds"]["triangle6"]
-                self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra10"]
+            #     self.domain_index_surf = msh.cell_data_dict["CellEntityIds"]["triangle6"]
+            #     self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra10"]
             
         self.number_ID_faces = np.unique(self.domain_index_surf)
         self.number_ID_vol = np.unique(self.domain_index_vol)
         
         self.NumNosC = len(self.nos)
         self.NumElemC = len(self.elem_vol)
-        
+
         if add_rng == True:
             rng_nos = 0.1*np.random.rand(len(self.nos[:,0]),len(self.nos[0,:]))
             self.nos = self.nos + rng_nos

@@ -1,6 +1,6 @@
 import numpy as np
 from femder.controlsair import sph2cart, cart2sph
-# from femder.rayinidir import RayInitialDirections
+from femder.rayinidir import RayInitialDirections
 
 
 class Source():
@@ -56,7 +56,62 @@ class Source():
     #         random (bool) - if True, then the complex amplitudes are randomized
     #     '''
     #     pass
-    
+    def iso_17497_2(self,radius=5,axis='z',center=[0,0,0],survey=False):
+        iso_table_elevation = np.deg2rad([0,30,30,30,30,30,30,60,60,60,60,60,60])
+        iso_table_azimuth = np.deg2rad([0,0,60,120,180,240,300,0,60,120,180,240,300])
+        
+        coord = np.array(sph2cart(radius,iso_table_elevation,iso_table_azimuth)).T
+        
+        x = coord[:,0]
+        y = coord[:,1]
+        z = coord[:,2]
+        if axis == 'x':
+            coord[:,0] = y
+            coord[:,1] = x
+        if axis == 'y':
+            coord[:,[2,1]] = coord[:,[1,2]]
+            coord[0,:] = [coord[0][2],coord[0][0],coord[0][1]]
+        self.coord = coord+np.ones_like(coord)*center
+        
+    def random_3d_array(self, x_len = 1.0, y_len = 1.0, z_len = 1.0, axis='z',zr = 0.1, n_total = 192, seed = 0):
+        '''
+        This method initializes a regular three dimensional array of receivers It will overwrite
+        self.coord to be a matrix where each line gives a 3D coordinate for each receiver
+        Inputs:
+            x_len - the length of the x direction (array goes from -x_len/2 to +x_len/2).
+            n_x - the number of receivers in the x direction
+            y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
+            n_y - the number of receivers in the y direction
+            z_len - the length of the z direction (array goes from zr to zr+z_len).
+            n_z - the number of receivers in the y direction
+            zr - distance from the closest receiver to the sample's surface
+        '''
+        # x and y coordinates of the grid
+        np.random.seed(seed)
+        
+        if axis =='z':
+            
+            xc = -x_len/2 + x_len * np.random.rand(n_total)#np.linspace(-x_len/2, x_len/2, n_x)
+            yc = -y_len/2 + y_len * np.random.rand(n_total)
+            zc = zr + z_len * np.random.rand(n_total)
+        
+        if axis =='y':           
+            xc = -x_len/2 + x_len * np.random.rand(n_total)#np.linspace(-x_len/2, x_len/2, n_x)
+            yc = zr + y_len * np.random.rand(n_total)
+            zc = -z_len/2 + z_len * np.random.rand(n_total)       
+            
+        if axis =='x':
+            xc = zr + x_len * np.random.rand(n_total)#np.linspace(-x_len/2, x_len/2, n_x)
+            yc = -y_len/2 + y_len * np.random.rand(n_total)
+            zc = -z_len/2 + z_len * np.random.rand(n_total)      
+        # meshgrid
+        # xv, yv, zv = np.meshgrid(xc, yc, zc)
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_total, 3), dtype = np.float32)
+        
+        self.coord[0:n_total, 0] = xc.flatten()
+        self.coord[0:n_total, 1] = yc.flatten()
+        self.coord[0:n_total, 2] = zc.flatten()
     
     def arc_sources(self, radius = 1.0, ns = 10, angle_span = (-90, 90), d = 0, axis = "x", random = False, plot=False,noise=False,noisescale = 1,seed=0 ):
         np.random.seed(seed)

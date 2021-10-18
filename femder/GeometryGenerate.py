@@ -128,6 +128,8 @@ class GeometryGenerator():
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(self.order)    
         gmsh.write('current_mesh.msh')
+        gmsh.write('current_mesh.vtk')
+
         gmsh.write('current_mesh.brep')
         if self.plot:
             gmsh.fltk.run()
@@ -136,7 +138,7 @@ class GeometryGenerator():
 
 
         # gmsh.write('current_geo2.geo_unrolled')
-        Grid = fd.GridImport3D(self.AP, 'current_mesh.msh',S=self.S_,R=self.R_,fmax=self.fmax,num_freq=self.num_freq,order = self.order,scale=self.S_cale,plot=self.plot)
+        Grid = fd.GridImport3D(self.AP, 'current_mesh.vtk',S=self.S_,R=self.R_,fmax=self.fmax,num_freq=self.num_freq,order = self.order,scale=self.S_cale,plot=self.plot)
         self.nos = Grid.nos
         self.elem_surf = Grid.elem_surf
         self.elem_vol =  Grid.elem_vol
@@ -270,7 +272,8 @@ class GeometryGenerator():
 
         # gmsh.model.mesh.embed(0, [15000], 3, tg[0][1])
         gmsh.model.mesh.generate(3)
-        gmsh.model.mesh.setOrder(self.order)    
+        gmsh.model.mesh.setOrder(self.order)
+        gmsh.model.occ.synchronize()
         gmsh.write('current_mesh.msh')
         gmsh.write('current_mesh.brep')
         if self.plot:

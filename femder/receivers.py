@@ -2,7 +2,7 @@ import numpy as np
 #import toml
 from femder.controlsair import load_cfg
 from femder.controlsair import sph2cart, cart2sph
-# from bemder.rayinidir import RayInitialDirections
+from femder.rayinidir import RayInitialDirections
 # 
 
 class Receiver():
@@ -77,16 +77,78 @@ class Receiver():
         self.coord[:, 0] = xv.flatten()
         self.coord[:, 1] = yv.flatten()
         self.coord[:, 2] = zr
-        
-    def arc_receivers(self, radius = 1.0, ns = 10, angle_span = (-90, 90), d = 0, axis = "x" ):
+    def arc(self, radius=1, angles=(-30, 30), axis="z", ref=None, n=None):
+        """
+        Return an arc of points in the selected axis.
+        Parameters
+        ----------
+        radius : int or float, optional
+            Radius of the arc.
+        angles : tuple or list, optional
+            Defines how many points the arc will contain and at which angles in degrees.
+        axis : str, optional
+            Defines which plane the arc will be parallel to.
+        ref : int, optional
+            Index of what point in self.coords will be used as the pivot of the rotation. If not defined the centroid
+            of 'coords' will be used.
+        n : int, optional
+            Number of points that the range defined by the first and last elements of 'angles' will contain. If no
+            defined the number of points will be determined by the number of elements in 'angles'.
+        view : bool, optional
+            Option to visualize the grid with Plotly.
+        Returns
+        -------
+        (N, 3) array containing the arc points and a dictionary containing the connectivity data.
+        """
+        if ref is None:
+            center = self.centroid
+        else:
+            center = self.coords[ref, :].reshape(1, 3)
+
+        points = {}
+        if n is None:
+            theta = [np.deg2rad(angle) for angle in angles]
+        else:
+            theta = np.linspace(np.deg2rad(angles[0]), np.deg2rad(angles[-1]), n)
+
+        for i in range(len(theta)):
+            x = center[0, 0] + radius * np.cos(theta[i])
+            y = center[0, 1] + radius * np.sin(theta[i]) if axis != "y" else center[0, 2] + radius * np.sin(theta[i])
+            z = center[0, 2] if axis != "y" else center[0, 1]
+
+            if axis == "x":
+                points[i] = np.array([z, y, x])
+            if axis == "y":
+                points[i] = np.array([x, z, y])
+            if axis == "z":
+                points[i] = np.array([x, y, z])
+
+        arc = np.array(list(points.values()))
+        if angles[0] == 0 and angles[1] == 360:
+            arc = arc[:len(arc) - 1]
+
+        points = dict(enumerate(arc.tolist(), 1))
+        lines = {}
+        a = 0
+        for a in range(1, int(len(arc))):
+            lines[a] = [a, a + 1]
+        lines[list(lines.keys())[-1] + 1] = [a + 1, 1]
+        surfaces = {1: list(lines.keys())}
+        con = {"points": points,
+               "lines": lines,
+               "surfaces": surfaces
+               }
+
+        return arc, con     
+    def arc_receivers(self, radius = 1.0, ns = 10, angle_span = (-90, 90), d = (0,0,0), axis = "x",add_perp_arc=False ):
         points = {}
         theta = np.arange(angle_span[0]*np.pi/180, (angle_span[1]+ns)*np.pi/180, ns*np.pi/180)
         for i in range(len(theta)):
             thetai = theta[i]
             # compute x1 and x2
-            x1 = d + radius*np.cos(thetai)
-            x2 = d + radius*np.sin(thetai)
-            x3 = d
+            x1 = d[0] + radius*np.cos(thetai)
+            x2 = d[1] + radius*np.sin(thetai)
+            x3 = d[2]
             
             if axis == "x":
                 points[i] = np.array([x3, x2, x1])
@@ -97,6 +159,13 @@ class Receiver():
             
         self.coord = np.array([points[i] for i in points.keys()])
         self.theta = theta
+        self.axis = axis
+        if add_perp_arc == True:
+            perp_arc = self.coord.copy()
+            perp_arc[:,[2,0]] = perp_arc[:,[0,2]]
+
+            self.coord = np.unique(np.concatenate((self.coord,perp_arc)),axis=0)
+
     def double_planar_array(self, x_len = 1.0, n_x = 8, y_len = 1.0, n_y = 8, zr = 0.01, dz = 0.01):
         '''
         This method initializes a double planar array of receivers (z/xy plane)

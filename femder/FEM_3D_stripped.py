@@ -5,15 +5,11 @@ Created on Sat Nov 28 23:33:54 2020
 @author: gutoa
 """
 import numpy as np
-from scipy.sparse.linalg import spsolve
 from pyMKL import pardisoSolver
-
 from matplotlib import ticker, gridspec, style, rcParams
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.colors import ListedColormap
 import seaborn
-# from pypardiso import spsolve
-# from scipy.sparse.linalg import gmres
 import time 
 from tqdm import tqdm
 import warnings
@@ -26,10 +22,9 @@ from scipy.sparse import csc_matrix
 from femder.utils import detect_peaks
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
-
 from contextlib import contextmanager
 import sys, os
-os.environ['KMP_WARNINGS'] = '0'
+
 import femder as fd
 
 @contextmanager
@@ -52,6 +47,16 @@ def asymetric_std_dev(curve):
     std_dev = np.sqrt(1 / (len(curve) - 1) * total_sum)
 
     return std_dev
+
+def std_obj(pR,rC):
+    std_dev = []
+    if len(rC) > 1:
+        for i in range(len(rC)):
+            std_r = np.std(pR[:,i])
+            std_dev.append(std_r)
+    else:
+        std_dev =  np.std(pR)
+    return [std_dev]
 
 def first_cuboid_mode(Lx,Ly,Lz,c0):
     idx_max = np.argmax([Lx,Ly,Lz])
@@ -235,6 +240,7 @@ def find_nearest2(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx], idx
+
 def p2SPL(p):
     SPL = 10*np.log10(0.5*p*np.conj(p)/(2e-5)**2)
     return np.real(SPL)
@@ -260,21 +266,7 @@ def Triangle10N(qsi):
     4*qsi[0]*qsi[1],
     4*qsi[1]*(-qsi[0] - qsi[1] + 1),
     4*qsi[0]*(-qsi[0] - qsi[1] + 1)])
-    
-    # deltaN = np.array([[(4*qsi[0] + 4*qsi[1] - 3),
-    # (4*qsi[0] - 1),
-    # 0,
-    # 4*qsi[1],
-    # -4*qsi[1],
-    # (4 - 4*qsi[1] - 8*qsi[0])],
-    # [(4*qsi[0] + 4*qsi[1] - 3),
-    # 0,
-    # (4*qsi[1] - 1),
-    # 4*qsi[0],
-    # 4 - 8*qsi[1] - 4*qsi[0],
-    # -4*qsi[0]]
-    # ]);
-    
+
     return N[:,np.newaxis]#,deltaN
 @jit
 def Tetrahedron10deltaN(qsi):
@@ -287,64 +279,6 @@ def Tetrahedron10deltaN(qsi):
                         [-t3,-t3,4 - t2 - 2*t3 - t1],[0,t3,t2],[t3,0,t1]])
     
     return deltaN.T
-@jit
-def find_no(nos,coord=[0,0,0]):
-    gpts = nos
-    coord = np.array(coord)
-    # no_ind = np.zeros_like(gpts)
-    no_ind = []
-    for i in range(len(gpts)):
-        no_ind.append(np.linalg.norm(gpts[i,:]-coord))
-        # print(gpts[i,:])
-    # print(no_ind)    
-    indx = no_ind.index(min(no_ind))
-    # print(min(no_ind))
-    return indx
-
-def mu2alpha(mu,c0,rho0):
-    mu[mu==0] = 0.0001
-    z0 = rho0*c0
-    z = 1/(mu)
-    R = (z-z0)/(z+z0)
-    alpha = 1-np.abs(R)**2
-    alpha[alpha<0] = 0
-    return alpha.flatten()
-    
-def assemble_Q_H_4(H_zero,Q_zero,NumElemC,elem_vol,nos,c0,rho0):
-    H = H_zero
-    Q = Q_zero
-    for e in tqdm(range(NumElemC)):
-        con = elem_vol[e,:]
-        coord_el = nos[con,:]
-    
-        He, Qe = int_tetra_4gauss(coord_el,c0,rho0)   
-        
-        H[con[:,np.newaxis],con] = H[con[:,np.newaxis],con] + He
-        Q[con[:,np.newaxis],con] = Q[con[:,np.newaxis],con] + Qe
-    return H,Q
-
-def assemble_Q_H_4_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
-
-    Hez = np.zeros([4,4,NumElemC])
-    Qez = np.zeros([4,4,NumElemC])
-    for e in tqdm(range(NumElemC)):
-        con = elem_vol[e,:]
-        coord_el = nos[con,:]
-        
-        He, Qe = int_tetra_4gauss(coord_el,c0,rho0)    
-        Hez[:,:,e] = He
-        Qez[:,:,e] = Qe
-    
-    NLB=np.size(Hez,1)
-    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
-    X = np.transpose(Y, (1, 0, 2))
-    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
-    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
-    
-    H = H.tocsc()
-    Q = Q.tocsc()
-    
-    return H,Q
 
 
 @jit
@@ -372,27 +306,6 @@ def assemble_Q_H_4_FAST_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,domain_ind
     return H,Q
 
 
-def assemble_Q_H_5_FAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
-
-    Hez = np.zeros([4,4,NumElemC])
-    Qez = np.zeros([4,4,NumElemC])
-    for e in tqdm(range(NumElemC)):
-        con = elem_vol[e,:]
-        coord_el = nos[con,:]
-        
-        He, Qe = int_tetra_5gauss(coord_el,c0,rho0)    
-        Hez[:,:,e] = He
-        Qez[:,:,e] = Qe
-    
-    NLB=np.size(Hez,1)
-    Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
-    X = np.transpose(Y, (1, 0, 2))
-    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
-    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
-    H = H.tocsc()
-    Q = Q.tocsc()
-    return H,Q
-
 def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
     Hez = np.zeros([10,10,NumElemC])
@@ -413,6 +326,7 @@ def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     H = H.tocsc()
     Q = Q.tocsc()
     return H,Q
+
 def assemble_Q_H_4_FAST_2order_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,domain_index_vol,fi):
 
     Hez = np.zeros([10,10,NumElemC])
@@ -465,80 +379,7 @@ def assemble_A10_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_
   
        
     return Aa
-@jit
-def int_tetra_simpl(coord_el,c0,rho0,npg):
 
-    He = np.zeros([4,4])
-    Qe = np.zeros([4,4])
-    
-# if npg == 1:
-    #Pontos de Gauss para um tetraedro
-    ptx = 1/4 
-    pty = 1/4
-    ptz = 1/4
-    wtz= 1#/6 * 6 # Pesos de Gauss
-    qsi1 = ptx
-    qsi2 = pty
-    qsi3 = ptz
-    
-    Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
-    GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
-
-    Ja = (GNi@coord_el)
-    detJa = (1/6) * np.linalg.det(Ja)
-    # print(detJa)
-    B = (np.linalg.inv(Ja)@GNi)
-    # B = spsolve(Ja,GNi)
-    # print(B.shape)              
-    argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
-    # print(np.matmul(Ni,np.transpose(Ni)).shape)
-    argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
-    
-    He = He + wtz*wtz*wtz*argHe1   
-    Qe = Qe + wtz*wtz*wtz*argQe1 
-    
-    return He,Qe
-
-# @jit
-# def int_tetra_4gauss(coord_el,c0,rho0):
-
-#     He = np.zeros([4,4])
-#     Qe = np.zeros([4,4])
-    
-# # if npg == 1:
-#     #Pontos de Gauss para um tetraedro
-#     a = 0.5854101966249685#(5-np.sqrt(5))/20 
-#     b = 0.1381966011250105 #(5-3*np.sqrt(5))/20 #
-#     ptx = np.array([a,b,b,a])
-#     pty = np.array([b,a,b,b])
-#     ptz = np.array([b,b,a,b])
-    
-#     weigths = np.array([1/24,1/24,1/24,1/24])*6
-    
-#     ## argHe1 is independent of qsi's, therefore it can be pre computed
-#     GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
-#     Ja = (GNi@coord_el)
-#     detJa = (1/6) * np.linalg.det(Ja)
-#     B = (np.linalg.inv(Ja)@GNi)
-#     argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
-#     for indx in range(4):
-#         qsi1 = ptx[indx]
-#         wtx =  weigths[indx]
-#         for indy in range(4):
-#             qsi2 = pty[indy]
-#             wty =  weigths[indx]
-#             for indz in range(4):
-#                 qsi3 = ptz[indz]
-#                 wtz =  weigths[indx]
-                
-#                 Ni = np.array([[1-qsi1-qsi2-qsi3],[qsi1],[qsi2],[qsi3]])
-
-#                 argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
-                
-#                 He = He + wtx*wty*wtz*argHe1   
-#                 Qe = Qe + wtx*wty*wtz*argQe1 
-    
-#     return He,Qe
 def assemble_Q_H_4_ULTRAFAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
     Hez = np.zeros([4,4,NumElemC])
@@ -567,6 +408,32 @@ def assemble_Q_H_4_ULTRAFAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     return H,Q
 
 def assemble_Q_H_4_ULTRAFAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
+    """
+    IN DEVELOPMENT
+
+    Parameters
+    ----------
+    NumElemC : TYPE
+        DESCRIPTION.
+    NumNosC : TYPE
+        DESCRIPTION.
+    elem_vol : TYPE
+        DESCRIPTION.
+    nos : TYPE
+        DESCRIPTION.
+    c0 : TYPE
+        DESCRIPTION.
+    rho0 : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    H : TYPE
+        DESCRIPTION.
+    Q : TYPE
+        DESCRIPTION.
+
+    """
 
     Hez = np.zeros([10,10,NumElemC])
     Qez = np.zeros([10,10,NumElemC])
@@ -592,7 +459,6 @@ def assemble_Q_H_4_ULTRAFAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     Q = Q.tocsc()
     
     return H,Q
-
 
 def compute_volume(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
 
@@ -631,41 +497,7 @@ def detJa_pre(Ja,GNi,rho0):
         argHe1[:,:,i] = (1/rho0)*(np.transpose(B[:,:,i] )@B[:,:,i])*detJa[i]
     return argHe1,detJa
 
-def int_tetra_4gauss(coord_el,c0,rho0):
 
-    He = np.zeros([4,4],dtype='cfloat')
-    Qe = np.zeros([4,4],dtype='cfloat')
-    
-# if npg == 1:
-    #Pontos de Gauss para um tetraedro
-    a = 0.5854101966249685#(5-np.sqrt(5))/20 
-    b = 0.1381966011250105 #(5-3*np.sqrt(5))/20 #
-    ptx = np.array([a,b,b,b])
-    pty = np.array([b,a,b,b])
-    ptz = np.array([b,b,a,b])
-    
-    ## argHe1 is independent of qsi's, therefore it can be pre computed
-    GNi = np.array([[-1,1,0,0],[-1,0,1,0],[-1,0,0,1]])
-    Ja = (GNi@coord_el)
-    detJa =  np.linalg.det(Ja)
-    B = (np.linalg.inv(Ja)@GNi)
-    argHe1 = (1/rho0)*(np.transpose(B)@B)*detJa
-    weigths = 1/24
-
-    qsi = np.zeros([3,1]).ravel()
-    for indx in range(4):
-        qsi[0] = ptx[indx]
-        qsi[1]= pty[indx]
-        qsi[2] = ptz[indx]
-                
-        Ni = np.array([[1-qsi[0]-qsi[1]-qsi[2]],[qsi[0]],[qsi[1]],[qsi[2]]],dtype=np.complex64)
-
-        argQe1 = (1/(rho0*c0**2))*(Ni@np.transpose(Ni))*detJa
-        
-        He = He + weigths*argHe1   
-        Qe = Qe + weigths*argQe1 
-    
-    return He,Qe
 def gauss_4_points():
         #Pontos de Gauss para um tetraedro
     a = 0.5854101966249685#(5-np.sqrt(5))/20 
@@ -674,6 +506,7 @@ def gauss_4_points():
     pty = np.array([b,a,b,b])
     ptz = np.array([b,b,a,b])
     return ptx,pty,ptz
+
 @njit
 def nint_tetra_4gauss(c0,rho0,argHe,detJa,ptx,pty,ptz):
     He = np.zeros((4,4),dtype=np.complex64)
@@ -699,8 +532,6 @@ def nint_tetra10_4gauss(c0,rho0,argHe,detJa,ptx,pty,ptz):
         Qe += 1/24*argQe1 
 
     return He,Qe
-
-
 
 
 @jit
@@ -951,18 +782,6 @@ def int_tri10_3gauss(coord_el):
         Ae = Ae + weight*argAe1
     
     return Ae
-    # def damped_eigen(self,Q,H,A,mu)
-def solve_damped_system(Q,H,A,number_ID_faces,mu,w,q,N):
-    Ag = np.zeros_like(Q,dtype=np.complex128)
-    i = 0
-    for bl in number_ID_faces:
-        Ag += A[:,:,i]*mu[bl][N]#/(self.rho0*self.c0)
-        i+=1
-    G = H + 1j*w[N]*Ag - (w[N]**2)*Q
-    b = -1j*w[N]*q
-    ps = spsolve(G,b)
-    return ps
-
 @njit
 def solve_modal_superposition(indR,indS,F_n,Vc,Vc_T,w,qindS,N,hn,Mn,ir):
     lenS = numba.int64(len(indS))
@@ -975,24 +794,13 @@ def solve_modal_superposition(indR,indS,F_n,Vc,Vc_T,w,qindS,N,hn,Mn,ir):
         for e in range(lenfn):
         
             wn = F_n[e]*2*np.pi
-            # print(self.Vc[indS[ii],e].T*(1j*self.w[N]*qindS[ii])*self.Vc[indR,e])
-            # print(((wn-self.w[N])*Mn[e]))
             An[0] += Vc_T[e,indS[ii]]*(1j*w[N]*qindS[ii])*Vc[indR[ir],e]/((wn**2-w[N]**2)*Mn[e]+1j*hn[e]*w[N])
-            # An[0] += Vc_T[e,2]*(1j*w[N]*qindS[ii])*Vc[2,e]/((wn**2-w[N]**2)*Mn[e]+1j*hn[e]*w[N])
 
     return An[0]
     
 
 
-def std_obj(pR,rC):
-    std_dev = []
-    if len(rC) > 1:
-        for i in range(len(rC)):
-            std_r = np.std(pR[:,i])
-            std_dev.append(std_r)
-    else:
-        std_dev =  np.std(pR)
-    return [std_dev]
+
 
 class FEM3D:
     def __init__(self,Grid,S,R,AP,AC,BC=None):
@@ -1057,8 +865,6 @@ class FEM3D:
         self.pN = None
         self.F_n = None
         self.Vc = None
-        self.H = None
-        self.Q = None
         self.rho = {}
         self.c = {}
         
@@ -1107,12 +913,11 @@ class FEM3D:
         self.q = np.zeros([self.NumNosC,1],dtype = np.cfloat)
         
         if len(self.rho) == 0:
-            if self.H is None:
-                if self.order == 1:
-                    self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
-                elif self.order == 2:
-                    self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
-                #Assemble A(Amortecimento)
+            if self.order == 1:
+                self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+            elif self.order == 2:
+                self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+            #Assemble A(Amortecimento)
             if self.BC != None:
                 
                 if self.order == 1:
@@ -1172,10 +977,7 @@ class FEM3D:
                             i+=1
                         G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
                         b =  -1j*self.w[N]*Vn
-                        pSolve = pardisoSolver(G, mtype=13)
-                        pSolve.run_pardiso(12)
-                        ps = pSolve.run_pardiso(33, b.todense())
-                        pSolve.clear()
+                        ps = spsolve(G,b)
                         pN.append(ps)
                 self.A = Ag
                 # self.Vn = Vn
@@ -1192,10 +994,7 @@ class FEM3D:
                 for N in tqdm(range(len(self.freq))):
                     G = self.H - (self.w[N]**2)*self.Q
                     b = -1j*self.w[N]*self.q
-                    pSolve = pardisoSolver(G, mtype=13)
-                    pSolve.run_pardiso(12)
-                    ps = pSolve.run_pardiso(33, b.todense())
-                    pSolve.clear()
+                    ps = spsolve(G,b)
                     pN.append(ps) 
         else:
             if self.BC != None:
@@ -1226,10 +1025,7 @@ class FEM3D:
                     
                     G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
                     b = -1j*self.w[N]*self.q
-                    pSolve = pardisoSolver(G, mtype=13)
-                    pSolve.run_pardiso(12)
-                    ps = pSolve.run_pardiso(33, b.todense())
-                    pSolve.clear()
+                    ps = spsolve(G,b)
                     pN.append(ps)
             else:
                 pN = []
@@ -1247,10 +1043,7 @@ class FEM3D:
                     
                     G = self.H - (self.w[N]**2)*self.Q
                     b = -1j*self.w[N]*self.q
-                    pSolve = pardisoSolver(G, mtype=13)
-                    pSolve.run_pardiso(12)
-                    ps = pSolve.run_pardiso(33, b.todense())
-                    pSolve.clear()
+                    ps = spsolve(G,b)
                     pN.append(ps) 
             
         self.pN = np.array(pN)
@@ -1337,8 +1130,7 @@ class FEM3D:
         S_all = np.vstack((np.array(S_all)[:,0,0,:],np.array(S_all)[:,1,0,:]))
         R_all = np.array(R_all)[:,0,:]
         
-        self.H = None
-        self.Q = None
+        
         self.R = fd.Receiver()
         self.R.coord = R_all 
         self.S = fd.Source()
@@ -1481,10 +1273,6 @@ class FEM3D:
          
         print('Solving System ...')
         # G = inv(self.Q)*(self.H)
-        # pSolve = pardisoSolver(self.Q, mtype=13)
-        # pSolve.run_pardiso(12)
-        # G = pSolve.run_pardiso(33, self.H.todense())
-        # pSolve.clear()
         G = spsolve(self.Q,self.H)
         # G = gmres(self.Q,self.H)
 

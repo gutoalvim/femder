@@ -290,7 +290,7 @@ def assemble_bem_3gauss_prepost(Incid,Coord,rF,w,k0,rho0,normals,areas):
     N[:,1]=np.transpose(qsi2)
     N[:,2]=np.transpose(1-qsi1-qsi2)
     detJa,xg,yg,zg = pre_proccess_bem_t3(Incid, Coord, N, GN)
-    for nod in tqdm(range(len(Coord))):
+    for nod in (range(len(Coord))):
         rS = Coord[nod,:]
         for i in range(len(rF)):
             rF_rS = np.linalg.norm(rS-rF[i,:])
@@ -912,7 +912,7 @@ class BEM3D:
     
         
     def surf_evaluate(self,freq,renderer='notebook',d_range = 45,
-                      saveFig=False,title=False,transparent_bg=False,filename=None,camera_angles=['floorplan', 'section', 'diagonal'],extension='png'):
+                      saveFig=False,title=False,transparent_bg=True,filename=None,camera_angles=['floorplan', 'section', 'diagonal'],extension='png'):
         """
         Evaluates pressure in the boundary of the mesh for a given frequency, and plots with plotly.
         Choose adequate rederer, if using Spyder or similar, use renderer='browser'.
@@ -1013,12 +1013,12 @@ class BEM3D:
                                            up=dict(x=0, y=1, z=0),
                                            center=dict(x=0, y=0, z=0), )
                     elif camera == 'diagonal_front':
-                        camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
-                                           up=dict(x=0, y=0, z=1),
+                        camera_dict = dict(eye=dict(x=2, y=2, z=2),
+                                           up=dict(x=0, y=0, z=1.5),
                                            center=dict(x=0, y=0, z=0), )
                     elif camera == 'diagonal_rear':
-                        camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
-                                           up=dict(x=0, y=0, z=1),
+                        camera_dict = dict(eye=dict(x=-2, y=-2, z=2),
+                                           up=dict(x=0, y=0, z=1.5),
                                            center=dict(x=0, y=0, z=0), )
                     fig.update_layout(scene_camera=camera_dict)
     
@@ -1305,24 +1305,24 @@ class BEM3D:
             for i in tqdm(range(len(nxy))):
                 # pxy[i] = closest_node(self.nos,nxy[i,:])
                 # print(coord_interpolation(self.nos, self.elem_vol, nxy[i,:], self.pN)[fi])
-                pxy[i] = coord_interpolation(self.nos, self.elem_vol, nxy[i,:], self.pN)[fi][0]
+                pxy[i] = self.evaluate(nxy[i,:])
             values_xy = np.real(p2SPL(pxy))
 
         if 'yz' in axis:             
             pyz = np.zeros([len(nyz),1],dtype = np.complex128).ravel()
             for i in tqdm(range(len(nyz))):
-                pyz[i] = coord_interpolation(self.nos, self.elem_vol, nyz[i,:], self.pN)[fi][0]
+                pyz[i] = self.evaluate(nyz[i,:])
             values_yz = np.real(p2SPL(pyz))
-        if 'xz' in axis:
+        if '' in axis:
             pxz = np.zeros([len(nxz),1],dtype = np.complex128).ravel()
             for i in tqdm(range(len(nxz))):
-                pxz[i] = coord_interpolation(self.nos, self.elem_vol, nxz[i,:], self.pN)[fi][0]
+                pxz[i] = self.evaluate(nxz[i,:])
                 # print(coord_interpolation(self.nos, self.elem_vol, nxz[i,:], self.pN)[fi][0])
             # print(pxz)                
             values_xz = np.real(p2SPL(pxz))
         if 'boundary' in axis:     
 
-            values_boundary = np.real(p2SPL(self.pN[fi,uind]))  
+            values_boundary = np.real(p2SPL(self.pC[fi]))  
         # Plotting
         plotly.io.renderers.default = renderer
 
@@ -1357,10 +1357,10 @@ class BEM3D:
         #     index = element.index
         #     local_values = np.real(20 * np.log10(np.abs((boundData[0].evaluate(index, local_coordinates))) / 2e-5))
         #     values[index] = local_values.flatten()
-        if Pmin is None:
-            Pmin = min(values_xy)
-        if Pmax is None:
-            Pmax = max(values_xy)
+        # if Pmin is None:
+        #     Pmin = min(values_xy)
+        # if Pmax is None:
+        #     Pmax = max(values_xy)
 
         colorbar_dict = {'title': 'SPL [dB]',
                          'titlefont': {'color': 'black'},
