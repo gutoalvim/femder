@@ -11,19 +11,15 @@ numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle geneticalgorith
 
 # 2) In Anaconda Prompt create a new env:
 
-$conda create -n myenv python=3.6
+$conda create -n myenv python=3.8
 
 $conda activate myenv
-
-Python 3.6 is HIGHLY reccomended, so you can make use of scikit-umfpack to accelerate computations, please use it, you will not regret it.
 
 # 3) Install all dependencies:
 
 $conda install git
 
-$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle geneticalgorithm
-
-$pip install scikit-umfpack==0.3.1
+$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle pymoo pymkl
 
 $conda install -c plotly plotly-orca
 

@@ -40,7 +40,7 @@ BC.normalized_admittance(2,0.02)
 
 # BC.rigid(2)
 #%%
-grid = fd.GridImport3D(AP,path_to_geo,S=None,R=None,fmax = 200,num_freq=6,scale=1,order=1)
+grid = fd.GridImport3D(AP,path_to_geo,S=None,R=None,fmax = 250,num_freq=6,scale=1,order=1)
 # grid = fd.GridImport3D(AP,path_to_geo,fmax = 200,num_freq=3,scale=1)
 
 
@@ -73,12 +73,36 @@ r = obj.fitness_metric(w1=0.5, w2=0.5,fmin=20,fmax=200, dip_penalty=True, center
                        returnValues=True, plot=True, figsize=(17, 9), std_dev='assymmetric')
 #%%
 
-sf,ss = fd.FEM_3D.SBIR_SPL(pN, AC, 20, max(AC.freq))
-
-sf2,ss2 = fd.FEM_3D.SBIR_SPL(pM, AC, 20, max(AC.freq))
+sf,ss = fd.FEM_3D.SBIR_SPL(obj.pR,obj.R.coord, AC,10,250)
 
 #%%
+import scipy.signal.windows as win
+t_IR = np.linspace(0,1,len(obj.freq))
+N = len(obj.freq)*2 + 1
+peak = 0  # Window from the start of the IR
+dt = (max(t_IR) / len(t_IR))  # Time axis resolution
+tt_ms = round((ms / 1000) / dt)  # Number of samples equivalent to 64 ms
 
+# Windows
+post_peak = np.zeros((len(t_IR[:])))
+pre_peak = np.zeros((len(t_IR[:])))
+
+
+win_cos = win.tukey(int(2 * tt_ms), 1)  # Cosine window
+
+window = np.zeros((len(t_IR[:])))  # Final window
+##
+win_cos[0:int(tt_ms)] = 1
+window[0:int(2 * tt_ms)] = win_cos
+
+win_freq = np.fft.fft(window,N)
+pR = np.pad(obj.pR[:,0],N-len(obj.pR[:,0]),mode='edge')
+
+sbir = np.convolve(win_freq,pR)
+
+plt.semilogx(fd.p2SPL(sbir))
+
+#%%
 plt.semilogx(sf,ss,label='Direct')
 plt.semilogx(sf2,ss2,label='Modal')
 plt.legend()
