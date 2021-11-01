@@ -38,11 +38,24 @@ def suppress_stdout():
             sys.stdout = old_stdout
             
 def rmse(predictions, targets):
+    """Compute Root Mean Square Error.
+
+    Parameters
+    ----------
+    predictions : numpy 1dArray
+        Vector of predicted values.
+    targets : numpy 1dArray
+        Vector of target values.
+
+    Returns
+    -------
+    rmse : float
+        the root mean square value of predictions - targets.
+    """
     return np.sqrt(((predictions - targets) ** 2).mean())
             
 def bem_load(filename,ext='.pickle'):
-    """
-    Load FEM3D simulation
+    """Load FEM3D simulation.
 
     Parameters
     ----------
@@ -53,11 +66,9 @@ def bem_load(filename,ext='.pickle'):
 
     Returns
     -------
-    obj : TYPE
-        DESCRIPTION.
-
+    obj : object
+        BEM3D object.
     """
-    
     import pickle
     
     infile = open(filename + ext, 'rb')
@@ -130,14 +141,72 @@ def SBIR_SPL(complex_pressure,AC,fmin,fmax):
     return sbir_freq,sbir_SPL
 
 def compute_normals(vertices,faces):
+    """Compute the normal unit vector of all elements.
+    
+    Calculate the normal for all the triangles, by taking the cross product
+    of the vectors v1-v0, and v2-v0 in each triangle and return a unity vector
+    
+    Parameters
+    ----------
+    vertices : numpy ndArray
+        The vertices in the mesh
+    faces : numpy ndArray
+        The connectivity matrix of the mesh
+    Returns
+    -------
+    n : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh
+    """
     # norm = np.zeros( vertices.shape, dtype=vertices.dtype )
-#Create an indexed view into the vertex array using the array of three indices for triangles
+    #Create an indexed view into the vertex array using the array of three indices for triangles
     tris = vertices[faces]        
-    #Calculate the normal for all the triangles, by taking the cross product of the vectors v1-v0, and v2-v0 in each triangle             
+    #The normal for all the triangles
     n = np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
     return numba.complex128(normalize_v3(n))
 
+@njit
+def area_normal_ph(re,rev=1):
+    """Calculate the area of one triangle.
+    
+    Parameters
+    ----------
+    re : numpy ndArray
+        The vertices in the triangle.
+    rev : #FixME - I find no use for rev
+    
+    Returns
+    -------
+    area_elm : float
+        the area of a triangle.
+    """
+    xe = (re[:,0])
+    ye = (re[:,1])
+    ze = (re[:,2])
+    #Heron's formula - triangle
+    a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
+    b = np.sqrt((xe[1]-xe[2])**2+(ye[1]-ye[2])**2+(ze[1]-ze[2])**2)
+    c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
+    p = (a+b+c)/2
+    area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
+    return area_elm
+
 def compute_areas(vertices,faces):
+    """Calculate the area of all elements in the mesh.
+    
+    Calls area_normal_ph to compute the area.
+    
+    Parameters
+    ----------
+    vertices : numpy ndArray
+        The vertices in the mesh.
+    faces : numpy ndArray
+        The connectivity matrix of the mesh.
+    
+    Returns
+    -------
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+    """
     areas = np.zeros((len(faces),1))
     for i in range(len(faces)):
         rS = vertices[faces[i,:],:]
@@ -145,27 +214,28 @@ def compute_areas(vertices,faces):
     return numba.complex128(areas.ravel())
 
 def normalize_v3(arr):
+    """Compute the unity vectors.
+    
+    Takes a set of 3D vectors, calculate its Euclidian norm and compute each
+    unity vector
+    
+    Parameters
+    ----------
+    arr : numpy ndArray
+        A set of 3D vectors.
+
+    Returns
+    -------
+    arr : numpy ndArray
+        A set of 3D unity vectors..
+
+    """
     lens = np.sqrt( arr[:,0]**2 + arr[:,1]**2 + arr[:,2]**2 )
     arr[:,0] /= lens
     arr[:,1] /= lens
     arr[:,2] /= lens                
     return arr
 
-@njit
-def area_normal_ph(re,rev=1):
-    
-    xe = (re[:,0])
-    ye = (re[:,1])
-    ze = (re[:,2])
-    #Formula de Heron - Area do Triangulo
-    
-    a = np.sqrt((xe[0]-xe[1])**2+(ye[0]-ye[1])**2+(ze[0]-ze[1])**2)
-    b = np.sqrt((xe[1]-xe[2])**2+(ye[1]-ye[2])**2+(ze[1]-ze[2])**2)
-    c = np.sqrt((xe[2]-xe[0])**2+(ye[2]-ye[0])**2+(ze[2]-ze[0])**2)
-    p = (a+b+c)/2
-    area_elm = np.abs(np.sqrt(p*(p-a)*(p-b)*(p-c)))
-    
-    return area_elm
 @jit
 def coord_interpolation(nos,elem_vol,coord,pN):
     coord = np.array(coord)
@@ -183,12 +253,20 @@ def coord_interpolation(nos,elem_vol,coord,pN):
 
     Nip = Ni.T@pN[:,con].T
     return Nip.T
+
 @jit
 def prob_elem(nos,elem,coord):
     cl1 = closest_node(nos, coord)
     eln = np.where(elem==cl1)
     pelem = elem[eln[0]]
     return pelem,eln[0]
+
+def closest_node(nodes, node):
+    nodes = np.asarray(nodes)
+    deltas = nodes - node
+    dist_2 = np.einsum('ij,ij->i', deltas, deltas)
+    return np.argmin(dist_2)
+
 @jit
 def which_tetra(node_coordinates, node_ids, p):
     ori=node_coordinates[node_ids[:,0],:]
@@ -212,32 +290,74 @@ def which_tetra(node_coordinates, node_ids, p):
     res[id_p]=id_tet
     return res
 
-def closest_node(nodes, node):
-    nodes = np.asarray(nodes)
-    deltas = nodes - node
-    dist_2 = np.einsum('ij,ij->i', deltas, deltas)
-    return np.argmin(dist_2)
-
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
 
 def p2SPL(p):
+    """Calculate the Sound Pressure Level in dB.
+    
+    Parameters
+    ----------
+    p : numpy ndArray
+        The sound pressure spectra in Pa.
+    
+    Returns
+    -------
+    SPL : numpy ndArray
+        The sound pressure spectra in dB.
+    """
     SPL = 10*np.log10(0.5*p*np.conj(p)/(2e-5)**2)
     return SPL
 
 # @jit(parallel=True)
 def assemble_bem_3gauss(Incid,Coord,rF,w,k0,rho0,normals,areas):
+    """Assemble the matrices and vectors of the BEM problem.
     
+    This assembler will use 3 Gauss points on a triangle and linear interpolation.
+    and assemble the matrices G, I and Cc, and the matrix Pi (cotaining the
+    unperturbed pressure caused by each sound source).
+    
+    Parameters
+    ----------
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    rF : numpy ndArray
+        The coordinates of the sources.
+    w : float
+        Angular freqency in rad/s.
+    k0 : float
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normals : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh.
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+        
+    Returns
+    -------
+    Gs : numpy ndArray
+        BEM matrix
+    I : numpy ndArray
+        BEM matrix
+    Cc : numpy ndArray
+        BEM matrix
+    Pi : numpy ndArray
+        Matrix with the unperturbed pressure caused by each sound source
+    """
+    # Initialize
     lenG = numba.int64((len(Coord)))
     Gs = np.zeros((lenG,lenG),dtype = np.complex64)
     I = np.zeros((lenG,lenG),dtype = np.complex64)
     Cc = np.zeros((lenG,lenG),dtype = np.complex64)
-    
+    # As vector
     Pi = np.zeros((lenG,1),dtype = np.complex64)
     GN=np.array([[1, 0, -1],[0, 1, -1]],dtype=np.float64)
-    
+    # 3 Gauss pts on a triangle: FixMe - Chunck used many times (consider function)
     a=1/6
     b=2/3
     qsi1=np.array([a, a, b])
@@ -247,39 +367,79 @@ def assemble_bem_3gauss(Incid,Coord,rF,w,k0,rho0,normals,areas):
     N[:,0]=np.transpose(qsi1)
     N[:,1]=np.transpose(qsi2)
     N[:,2]=np.transpose(1-qsi1-qsi2)
-
+    # loop through nodes (colocation pts)
     for nod in tqdm(range(len(Coord))):
+        # colocation point on the surface and distance to source
         rS = Coord[nod,:]
         rF_rS = np.linalg.norm(rS-rF)
-        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # Green's function
         Pi[nod] = np.exp(-1j*k0*rF_rS)/(rF_rS)
-        
+        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # loop through elements
         for es in range(len(Incid)):
+            # get connectivity, vertices, area and normal of element to integrate
             con = Incid[es,:]
             coord_el = Coord[con,:]
-
             area = areas[es]
             normal = normals[es,:]
+            # Perform integration and assembly of local Ge, He and Ce
             Ge,He,Ce=bem_t3(coord_el,rS,w,k0,rho0,normal,area,N,GN,weights);
-            Gs[nod,con] += Ge
+            # Assemble matrices
+            Gs[nod,con] += Ge #FixMe: What con is? Should it be es?
             I[nod,con] += He
             Cc[nod,con] += Ce
-            
-
     return Gs,I,Cc,Pi
 
 
-
+#FixMe - strongly suggest to use uniform nomenclature
 def assemble_bem_3gauss_prepost(Incid,Coord,rF,w,k0,rho0,normals,areas):
+    """Assemble the matrices and vectors of the BEM problem.
     
+    This assembler will use 3 Gauss points on a triangle and linear interpolation.
+    and assemble the
+    matrices G, I and Cc, and the matrix Pi (cotaining the unperturbed pressure
+    caused by each sound source).
+    
+    Parameters
+    ----------
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    rF : numpy ndArray
+        The coordinates of the sources.
+    w : float
+        Angular freqency in rad/s.
+    k0 : float
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normals : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh.
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+        
+    Returns
+    -------
+    Gs : numpy ndArray
+        BEM matrix
+    I : numpy ndArray
+        BEM matrix
+    Cc : numpy ndArray
+        BEM matrix
+    Pi : numpy ndArray
+        Matrix with the unperturbed pressure caused by each sound source
+    """
+    # Initialize the matrices
     lenG = numba.int64((len(Coord)))
     Gs = np.zeros((lenG,lenG),dtype = np.complex64)
     I = np.zeros((lenG,lenG),dtype = np.complex64)
     Cc = np.zeros((lenG,lenG),dtype = np.complex64)
-    
+    # Initialize unperturbed pressure caused by each sound source
     Pi = np.zeros((lenG,len(rF)),dtype = np.complex64)
+    # FixMe: Not sure what that is
     GN=np.array([[1, 0, -1],[0, 1, -1]],dtype=np.float64)
-    
+    # 3 Gauss pts on a triangle -  FixMe - Chunck used many times (consider function)
     a=1/6
     b=2/3
     qsi1=np.array([a, a, b])
@@ -289,159 +449,317 @@ def assemble_bem_3gauss_prepost(Incid,Coord,rF,w,k0,rho0,normals,areas):
     N[:,0]=np.transpose(qsi1)
     N[:,1]=np.transpose(qsi2)
     N[:,2]=np.transpose(1-qsi1-qsi2)
+    # Locations of Gauss points and the determinant of the Jacobian
     detJa,xg,yg,zg = pre_proccess_bem_t3(Incid, Coord, N, GN)
-    for nod in tqdm(range(len(Coord))):
-        rS = Coord[nod,:]
+    # loop through nodes (colocation pts)
+    bar = tqdm(total = len(Coord), leave = True,
+               desc = 'looping all nodes for f = {:.2f} Hz'.format(w/(2*np.pi)))
+    for nod in range(len(Coord)):
+        rS = Coord[nod,:] # colocation point on the surface
+        # loop through sources
         for i in range(len(rF)):
+            # distance from node to source
             rF_rS = np.linalg.norm(rS-rF[i,:])
-            # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+            # Green function (unperturbed pressure)
             Pi[nod,i] = np.exp(-1j*k0*rF_rS)/(rF_rS)
-        
+            # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # loop through elements
         for es in range(len(Incid)):
-            con = Incid[es,:]
+            # get connectivity, vertices, area and normal of element to integrate
+            con = Incid[es,:] 
             coord_el = Coord[con,:]
             area = areas[es]
             normal = normals[es,:]
-            Ge,He,Ce=bem_t3_post(coord_el,rS,w,k0,rho0,normal,area,N,GN,weights,detJa[es],xg[es],yg[es],zg[es]);
-            Gs[nod,con] =  Gs[nod,con] + Ge
+            # Perform integration and assembly of local Ge, He and Ce
+            Ge,He,Ce=bem_t3_post(coord_el,rS,w,k0,rho0,normal,area,N,GN,
+                                 weights,detJa[es],xg[es],yg[es],zg[es]);
+            # Assemble matrices 
+            Gs[nod,con] =  Gs[nod,con] + Ge #FixMe: What con is? Should it be es?
             I[nod,con] = I[nod,con] + He
-            Cc[nod,nod] = Cc[nod,nod] + Ce
-            
-
+            Cc[nod,nod] = Cc[nod,nod] + Ce 
+        bar.update(1)
+    bar.close()
     return Gs,I,Cc,Pi
 
 def evaluate_bem_3gauss_prepost(R,Incid,Coord,rF,w,k0,rho0,normals,areas):
+    """Assemble BEM matrices and vectors to evaluate field points.
     
+    This assembler will use 3 Gauss points on a triangle and linear
+    interpolation. It assembles the matrices Gf, I2 and the matrix Pifp 
+    (cotaining the incident pressure at the field points
+     caused by each sound source).
+    
+    Parameters
+    ----------
+    coord : numpy ndArray
+        The coordinated of the receivers (field points)
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    rF : numpy ndArray
+        The coordinates of the sources.
+    w : float
+        Angular freqency in rad/s.
+    k0 : float
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normals : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh.
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+        
+    Returns
+    -------
+    Gf : numpy ndArray
+        BEM matrix.
+    If : numpy ndArray
+        BEM matrix.
+    Pifp : numpy ndArray
+        Matrix with the incident pressure caused by each sound source at field pts.
+    """
+    # Initialize
     lenG = numba.int64((len(Coord)))
     lenR = numba.int64((len(R.coord)))
     Gf = np.zeros((lenR,lenG),dtype = np.complex64)
     I2 = np.zeros((lenR,lenG),dtype = np.complex64)
-    
-    Pi = np.zeros((lenR,len(rF)),dtype = np.complex64)
+    # As a matrix
+    Pi = np.zeros((lenR,len(rF)),dtype = np.complex64) # FixMe: consider rename to Pifp
     GN=np.array([[1, 0, -1],[0, 1, -1]],dtype=np.float64)
-    
+    # Gauss points - FixMe: This is used many times (consider a function)
     a=1/6
     b=2/3
     qsi1=np.array([a, a, b])
     qsi2=np.array([a, b, a]); 
-    weights=np.array([1/6, 1/6, 1/6]).T*2
+    weights=np.array([1/6, 1/6, 1/6]).T*2 # FixMe - Why the *2 multiplication?
     N = np.zeros((3,3),dtype=np.float64)
     N[:,0]=np.transpose(qsi1)
     N[:,1]=np.transpose(qsi2)
     N[:,2]=np.transpose(1-qsi1-qsi2)
-    
+    # Compute determinant of Jacobian and the real location of the Gauss pts
     detJa,xg,yg,zg = pre_proccess_bem_t3(Incid, Coord, N, GN)
+    # loop through all field points
     for fp in (range(len(R.coord))):
+        # field point coordinate
         coord_FP = R.coord[fp,:]
-        for i in range(len(rF)):
-            
+        for i in range(len(rF)): # FixMe - This loop is also repetivite.
+            # Source-receiver distance and Green's function
             rF_rS = np.linalg.norm(coord_FP-rF[i,:])
-            # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
             Pi[fp,i] = -np.exp(-1j*k0*rF_rS)/(rF_rS)
-        
+            # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # loop through all elements
         for es in range(len(Incid)):
+            # Get connectivity and nodes of the elements
             con = Incid[es,:]
             coord_el = Coord[con,:]
-
+            # areas and normals
             area = areas[es]
             normal = normals[es,:]
-            Ge,He,Ce=bem_t3_post(coord_el,coord_FP,w,k0,rho0,normal,area,N,GN,weights,detJa[es],xg[es],yg[es],zg[es]);
+            # Compute Ge, He and Ce of the element and assemble Gf and I2
+            Ge,He,Ce=bem_t3_post(coord_el,coord_FP,w,k0,rho0,normal,area,N,GN,
+                                 weights,detJa[es],xg[es],yg[es],zg[es]);
             Gf[fp,con] += Ge
-            I2[fp,con] += He
-            
-
+            I2[fp,con] += He          
     return Gf,I2,Pi
 
-
-def evaluate_bem_3gauss(R,Incid,Coord,rF,w,k0,rho0,normals,areas):
+def evaluate_bem_3gauss(R,Incid,Coord,rF,w,k0,rho0,normals,areas): #FixMe: Function can maybe go away
+    """Assemble BEM matrices and vectors to evaluate field points.
     
+    This assembler will use 3 Gauss points on a triangle and linear
+    interpolation. It assembles the matrices Gf, I2 and the matrix Pifp 
+    (cotaining the incident pressure at the field points
+     caused by each sound source).
+    
+    Parameters
+    ----------
+    R : numpy ndArray
+        The coordinated of the receivers (field points)
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    rF : numpy ndArray
+        The coordinates of the sources.
+    w : float
+        Angular freqency in rad/s.
+    k0 : float
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normals : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh.
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+        
+    Returns
+    -------
+    Gf : numpy ndArray
+        BEM matrix.
+    If : numpy ndArray
+        BEM matrix.
+    Pifp : numpy ndArray
+        Matrix with the incident pressure caused by each sound source at field pts.
+    """
+    # Initialize
     lenG = numba.int64((len(Coord)))
     lenR = numba.int64((len(Coord)))
     Gf = np.zeros((lenR,lenG),dtype = np.complex64)
     I2 = np.zeros((lenR,lenG),dtype = np.complex64)
-    
+    # As vector
     Pi = np.zeros((lenR,1),dtype = np.complex64)
-
+    # loop through all receivers
     for fp in (range(len(R))):
+        # Receiver coordinate and distance to source
         coord_FP = R.coord[fp,:]
         rF_rS = np.linalg.norm(coord_FP-rF)
-        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
         Pi[fp] = np.exp(-1j*k0*rF_rS)/(rF_rS)
-        
+        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # Loop through all elements
         for es in range(len(Incid)):
+            # Get the verticies coordinates
             con = Incid[es,:]
             coord_el = Coord[es,:]
-
+            # area and normal unity vector
             area = areas[es]
             normal = normals[es,:]
+            # Compute element Ge, He, Ce matrices
             Ge,He,Ce=bem_t3(coord_el,coord_FP,w,k0,rho0,normal,area);
             Gf[fp,con] += Ge
-            I2[fp,con] += He
-            
-
+            I2[fp,con] += He       
     return Gf,I2,Pi
 
-
 def pre_proccess_bem_t3(Incid,Coord,N,GN):
+    """Compute real locations of Gauss points and the determinant of the Jacobian.
     
+    Parameters
+    ----------
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    N : numpy ndArray
+        The shape functions.
+    GN : numpy ndArray
+        I have no idea.
+        
+    Returns
+    -------
+    detJa : list
+        determinant of the Jacobian for all elements
+    xg : list
+        x-coord of Gauss points for all elements
+    yg : list
+        y-coord of Gauss points for all elements
+    zg : list
+        z-coord of Gauss points for all elements
+    """
     xg = []
     yg = []
     zg = []
     detJa = []
+    #loop through all elements in the mesh
     for es in range(len(Incid)):
+        # Get elements' coordinates
         con = Incid[es,:]
         coord_el = Coord[con,:]
         X0=coord_el[:,0]; Y0=coord_el[:,1]; Z0=coord_el[:,2];
+        #pages 112-113 Attala
         dx0=X0[1]-X0[0];dx1=X0[2]-X0[1];dx2=X0[0]-X0[2];
         dy0=Y0[1]-Y0[0];dy1=Y0[2]-Y0[1];dy2=Y0[0]-Y0[2];
         dz0=Z0[1]-Z0[0];dz1=Z0[2]-Z0[1];dz2=Z0[0]-Z0[2];
         
-        # comprimento das arestas
+        # edge length of triangle
         a=np.sqrt(dx0**2+dy0**2+dz0**2)
         b=np.sqrt(dx1**2+dy1**2+dz1**2)
         c=np.sqrt(dx2**2+dy2**2+dz2**2)
-        # angulo do plano do triângulo em relação ao plano x-y
+        # angle of triangle relative to plane x-y
         ang = np.arccos((a**2+b**2-c**2)/(2*a*b))
         coordxy = (np.array([[0, a, b*np.cos(ang)],[0,0,b*np.sin(ang)]]).T)
+        # Compute Gauss coordinates - FixMe: Consider pre-allocating in numpy. append to list will not work with Numba
         xg.append(np.dot(N,coord_el[:,0]))
         yg.append(np.dot(N,coord_el[:,1]))
         zg.append(np.dot(N,coord_el[:,2]))
+        # Compute Jacobian
         Ja = np.dot(GN,coordxy); # Matriz Jacobiana (transformação de coordenadas / mapeamento para sist. global)
     
     # print(Ja.shape)
         detJa.append(np.linalg.det(Ja)/2)
         
     return detJa,xg,yg,zg
+
 @njit
 def bem_t3_post(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights,detJa,xg,yg,zg):
+    """Compute matrices Ge, He and Ce.
     
+    Parameters
+    ----------
+    coord_el: numpy ndArray
+        vertices of the element.
+    coord_nod : numpy 1dArray
+        coordinate of node (colocation point).
+    w : float
+        Angular freqency in rad/s.
+    k : float #FixMe - consider change to k0 
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normal : numpy 1dArray (numba.complex128)
+        normal unity vector of the element.
+    area : float
+        the area of the triangular element.
+    N : numpy ndArray
+        The shape functions.
+    GN : numpy ndArray
+        I have no idea.
+    weights : numpy 1dArray
+        Gauss weights
+    detJa : float
+        determinant of the Jacobian of the element
+    xg : numpy ndArray
+        x-coord of Gauss points of the element
+    yg : numpy ndArray
+        y-coord of Gauss points of the element
+    zg : numpy ndArray
+        z-coord of Gauss points of the element
+    
+    Returns
+    -------
+    Ge : numpy 1dArray
+        Integral of Green's function
+    He : numpy ndArray
+        Integral of the derivative of Green's function
+    Ce : numpy ndArray
+        Value of C constant
+    """
+    # Initialize
     Ge = np.zeros((3,),dtype=np.complex64)
     He = np.zeros((3,),dtype=np.complex64)
     Ce = np.zeros((3,),dtype=np.complex64)
-    
-    
+    # x, y, z of colocation pt
     x=coord_nod[0];
     y=coord_nod[1];
     z=coord_nod[2];
-    #%****Vetores de Influências
+    # Influence vectors
     xdis=xg-x;
     ydis=yg-y;
     zdis=zg-z;
     dis=np.sqrt(xdis**2+ydis**2+zdis**2)
     # print(dis.shape)
+    # 3D Green's function
     g_top = np.exp(-1j*k*dis)
     g= g_top/(4*np.pi*dis);  # 1i*rho*w*exp(-1j*k*dis)/(4*np.pi*dis);
     
+    # Integrate (compute Ge) - Green's function
     Ge[0]=np.sum(np.sum(g*N[:,0]*detJa*weights)*weights); 
     Ge[1]=np.sum(np.sum(g*N[:,1]*detJa*weights)*weights); 
     Ge[2]=np.sum(np.sum(g*N[:,2]*detJa*weights)*weights); 
     
-    
+    # Integrate (compute He) - Derivative of Green's function
     h1=-xdis*np.exp(-1j*k*dis)/(4*np.pi*dis**2)*(1j*k+1/dis);
     h2=-ydis*np.exp(-1j*k*dis)/(4*np.pi*dis**2)*(1j*k+1/dis);
     h3=-zdis*np.exp(-1j*k*dis)/(4*np.pi*dis**2)*(1j*k+1/dis);
     
-
     n = normal
     hn = np.array([[h1[0],h1[2],h1[2]],[h2[0],h2[2],h2[2]],[h3[0],h3[2],h3[2]]]).T
     # print(hn.shape)
@@ -451,6 +769,7 @@ def bem_t3_post(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights,detJa,xg,yg
     He[1]=np.sum(np.sum(-h*N[:,1]*detJa*weights)*weights); 
     He[2]=np.sum(np.sum(-h*N[:,2]*detJa*weights)*weights);
     
+    # Compute C matrix
     c1=-xdis/(4*np.pi*dis**2)*(1/dis);
     c2=-ydis/(4*np.pi*dis**2)*(1/dis);
     c3=-zdis/(4*np.pi*dis**2)*(1/dis);
@@ -464,34 +783,68 @@ def bem_t3_post(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights,detJa,xg,yg
     
     return Ge,He,Ce
     
-def bem_t3(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights):
+def bem_t3(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights): # FixMe: This function can go away. Easier to mantain repo
+    """Compute matrices Ge, He and Ce.
     
+    The Jacobian and real locations of the Gauss points are calculated in the
+    function
+    
+    Parameters
+    ----------
+    coord_el: numpy ndArray
+        vertices of the element.
+    coord_nod : numpy 1dArray
+        coordinate of node (colocation point).
+    w : float
+        Angular freqency in rad/s.
+    k : float #FixMe - consider change to k0 
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normal : numpy 1dArray (numba.complex128)
+        normal unity vector of the element.
+    area : float
+        the area of the triangular element.
+    N : numpy ndArray
+        The shape functions.
+    GN : numpy ndArray
+        I have no idea.
+    weights : numpy 1dArray
+        Gauss weights
+    
+    Returns
+    -------
+    Ge : numpy 1dArray
+        Integral of Green's function
+    He : numpy ndArray
+        Integral of the derivative of Green's function
+    Ce : numpy ndArray
+        Value of C constant
+    """
+    # Initialize
     Ge = np.empty((3,),dtype=np.complex64)
     He = np.empty((3,),dtype=np.complex64)
     Ce = np.empty((3,),dtype=np.complex64)
-    
+    # Compute real location of the Gauss points
     X0=coord_el[:,0]; Y0=coord_el[:,1]; Z0=coord_el[:,2];
     dx0=X0[1]-X0[0];dx1=X0[2]-X0[1];dx2=X0[0]-X0[2];
     dy0=Y0[1]-Y0[0];dy1=Y0[2]-Y0[1];dy2=Y0[0]-Y0[2];
     dz0=Z0[1]-Z0[0];dz1=Z0[2]-Z0[1];dz2=Z0[0]-Z0[2];
-    
-    # comprimento das arestas
+    # edge length
     a=np.sqrt(dx0**2+dy0**2+dz0**2)
     b=np.sqrt(dx1**2+dy1**2+dz1**2)
     c=np.sqrt(dx2**2+dy2**2+dz2**2)
-    # angulo do plano do triângulo em relação ao plano x-y
+    # angle of triangle relative to plane x-y
     ang = np.arccos((a**2+b**2-c**2)/(2*a*b))
     coordxy=np.array([[0, a, b*np.cos(ang)],[0,0,b*np.sin(ang)]]).T
     # y=np.array([0,b*np.sin(ang)])
     # coordxy=np.array([x,y]).T;
     # print(coordxy.shape)
     # pontos e pesos de Gauss (3 pontos de integração) - 2D TRI
-
-
+    # real location of Gauss points
     xg=np.dot(N,coord_el[:,0])
     yg=np.dot(N,coord_el[:,1])
     zg=np.dot(N,coord_el[:,2]) # coordenadas reais dos ptos de gauss, internos ao elemento
-    
     # ex=coord_el[:,0];
     # ey=coord_el[:,1];
     # ez=coord_el[:,2]; 
@@ -503,23 +856,23 @@ def bem_t3(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights):
     # detJxy=np.array([np.linalg.det(JTxy[0:1,:]),np.linalg.det(JTxy[2:3,:]),np.linalg.det(JTxy[4:5,:])]);
     # detJyz=np.array([np.linalg.det(JTyz[0:1,:]),np.linalg.det(JTyz[2:3,:]),np.linalg.det(JTyz[4:5,:])]);
     # detJzx=np.array([np.linalg.det(JTzx[0:1,:]),np.linalg.det(JTzx[2:3,:]),np.linalg.det(JTzx[4:5,:])]);
-    
-    Ja = np.dot(GN,coordxy); # Matriz Jacobiana (transformação de coordenadas / mapeamento para sist. global)
-    
+    # Compute Jacobian and its determinant
+    Ja = np.dot(GN,coordxy); # Matriz Jacobiana (transformação de coordenadas / mapeamento para sist. global)  
     # print(Ja.shape)
     detJa=np.linalg.det(Ja)/2;
-    
+    # Nodes coordinates
     x=coord_nod[0];
     y=coord_nod[1];
     z=coord_nod[2];
-    #%****Vetores de Influências
+    #Influence vectors
     xdis=xg-x;
     ydis=yg-y;
     zdis=zg-z;
+    # Green's function
     dis=np.sqrt(xdis**2+ydis**2+zdis**2);
     g_top = np.exp(-1j*k*dis)
     g= g_top/(4*np.pi*dis);  # 1i*rho*w*exp(-1j*k*dis)/(4*np.pi*dis);
-    
+    # Matrix Ge - green's function
     Ge[0]=np.sum(np.sum(g*N[:,0]*detJa*weights)*weights); 
     Ge[1]=np.sum(np.sum(g*N[:,1]*detJa*weights)*weights); 
     Ge[2]=np.sum(np.sum(g*N[:,2]*detJa*weights)*weights); 
@@ -528,17 +881,16 @@ def bem_t3(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights):
     # h1=-xdis*np.exp(-1j*k*dis)/(4*np.pi*dis**2)*(1j*k+1/dis);
     # h2=-ydis*np.exp(-1j*k*dis)/(4*np.pi*dis**2)*(1j*k+1/dis);
     # h3=-zdis*np.exp(-1j*k*dis)/(4*np.pi*dis**2)*(1j*k+1/dis);
-    
+    # Matrix He - green's function derivative
     n = normal
     hn = np.array([-xdis*g_top/(4*np.pi*dis**2)*(1j*k+1/dis),
                 -ydis*g_top/(4*np.pi*dis**2)*(1j*k+1/dis),
                 -zdis*g_top/(4*np.pi*dis**2)*(1j*k+1/dis)])
-    
     h=np.dot(hn,n.T); 
-    
     He[0]=np.sum(np.sum(-h*N[:,0]*detJa*weights)*weights); 
     He[1]=np.sum(np.sum(-h*N[:,1]*detJa*weights)*weights); 
     He[2]=np.sum(np.sum(-h*N[:,2]*detJa*weights)*weights);
+    # Matrix Ce
     c1=-xdis/(4*np.pi*dis**2)*(1/dis);
     c2=-ydis/(4*np.pi*dis**2)*(1/dis);
     c3=-zdis/(4*np.pi*dis**2)*(1/dis);
@@ -547,65 +899,139 @@ def bem_t3(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights):
     Ce[1]=np.sum(np.sum(-cc*N[:,1]*detJa*weights)*weights); 
     Ce[2]=np.sum(np.sum(-cc*N[:,2]*detJa*weights)*weights); 
     Ce=np.sum(Ce);
-    
     return He,Ge,Ce
     
     
 @njit
 def assemble_BEM(Incid,Coord,rF,w,k0,rho0,normals,areas):
+    """Assemble the matrices and vectors of the BEM problem.
+    
+    This assembler will use 3 Gauss points on a triangle and constant
+    interpolation. It assembles the matrices G, I and Cc, and the matrix Pi 
+    (cotaining the unperturbed pressure caused by each sound source).
+    
+    Parameters
+    ----------
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    rF : numpy ndArray
+        The coordinates of the sources.
+    w : float
+        Angular freqency in rad/s.
+    k0 : float
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normals : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh.
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+        
+    Returns
+    -------
+    Gs : numpy ndArray
+        BEM matrix
+    I : numpy ndArray
+        BEM matrix
+    Pi : numpy ndArray
+        Matrix with the unperturbed pressure caused by each sound source
+    """
+    # Initialization
     lenG = numba.int64((len(Incid)))
     Gs = np.zeros((lenG,lenG),dtype = np.complex64)
-    I = np.zeros((lenG,lenG),dtype = np.complex64)
-    
-    
+    I = np.zeros((lenG,lenG),dtype = np.complex64)  
     centers = np.zeros((lenG,3),dtype=np.float64)
     Pi = np.zeros((lenG,1),dtype = np.complex64)
-
+    # loop through all elements
     for es in (range(len(Incid))):
+        # Get the center of the element
         rrS = Coord[Incid[es,:],:]
         rS = (rrS[0,:] + rrS[1,:] + rrS[2,:])/3
-
-        centers[es,:] = rS        
+        centers[es,:] = rS  # FixMe: no need for the extra line      
         rF_rS = np.linalg.norm(rS-rF)
-        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # 3D Green's function from source to center - FixMe: In the linear interpolation you loop through existing sources
         Pi[es] = np.exp(-1j*k0*rF_rS)/(rF_rS)
-        
+        # Pi[es] = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rS)/rF_rS
+        # loop through all elements
         for e in range(len(Incid)):
             re = Coord[Incid[e,:],:]
             area = areas[e]
+            # Distance between center and nodes
             r_rS = np.sqrt((re[:,0]-rS[0])**2 + (re[:,1]-rS[1])**2 + (re[:,2]-rS[2])**2)
-            
+            # Green's function derivative
             dG = -((re-rS)*(np.exp(-1j*k0*r_rS)/(4*np.pi*r_rS**2))*(1j*k0 +1/r_rS))
-
             dGdN = np.dot(dG,normals[e,:])
-
+            # Green's function from all nodes to node center
             Gc = np.exp(-1j*k0*r_rS)/(4*np.pi*r_rS)
-
+            # Form matrices Gs and I
             Gs[es,e] = np.mean(Gc)*area
             I[es,e] = np.mean(dGdN)*area
-            
-
     return Gs,I,Pi
 
 # @staticmethod
 @njit
 def evaluate_field_BEM(coord,Incid,Coord,rF,w,k0,rho0,normals,areas):
+    """Assemble BEM matrices and vectors to evaluate field points.
     
+    This assembler will use a triangle and constant
+    interpolation. It assembles the matrices Gf, I2 and the matrix Pifp 
+    (cotaining the incident pressure at the field points
+     caused by each sound source).
+    
+    Parameters
+    ----------
+    coord : numpy ndArray
+        The coordinated of the receivers (field points)
+    Incid : numpy ndArray
+        The connectivity matrix of the mesh.
+    Coord : numpy ndArray
+        The vertices in the mesh.
+    rF : numpy ndArray
+        The coordinates of the sources.
+    w : float
+        Angular freqency in rad/s.
+    k0 : float
+        Magnitude of the wave-number in rad/m.
+    rho0 : float
+        Fluid density in kg/m^3
+    normals : numpy ndArray (numba.complex128)
+        All normal unity vectors of the mesh.
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+        
+    Returns
+    -------
+    Gf : numpy ndArray
+        BEM matrix.
+    If : numpy ndArray
+        BEM matrix.
+    Pifp : numpy ndArray
+        Matrix with the incident pressure caused by each sound source at field pts.
+    """
+    # Initialize
     lenG = numba.int64((len(Incid)))
     lenR = numba.int64((len(coord)))
     Gf = np.zeros((lenR,lenG),dtype = np.complex64)
     I2 = np.zeros((lenR,lenG),dtype = np.complex64)
+    # Here definided as vector or 1d matrix
     Pifp = np.zeros((lenR,1),dtype = np.complex64)
     # normals = compute_normals(Coord,Incid)
+    # loop through all receivers
     for fp in range(lenR):
-        
+        # receiver 3D coord and Euclidian distance to source
         rfp = coord[fp,:]
         rF_rfp = np.linalg.norm(rfp - rF)
-        # Pifp = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rfp)/rF_rfp
+        # Green's function
         Pifp[fp] = np.exp(-1j*k0*rF_rfp)/(rF_rfp)
+        # Pifp = (1j*w*rho0/(4*np.pi))*np.exp(-1j*k0*rF_rfp)/rF_rfp
+        # loop all elements
         for es in range(lenG):
+            # Get the element nodes and distance of nodes to receiver
             rS = Coord[Incid[es,:],:]
             r_rS = np.sqrt((rS[:,0]-rfp[0])**2 + (rS[:,1]-rfp[1])**2 + (rS[:,2]-rfp[2])**2)
+            # Get area and normal unity vector of element
             area = areas[es]
             normal = normals[es,:]
             # normal = np.reshape(normal,(-1,1))
@@ -617,72 +1043,112 @@ def evaluate_field_BEM(coord,Incid,Coord,rF,w,k0,rho0,normals,areas):
             # dG = val / (r_rS**2) * (1j * k0 * r_rS - 1)
             # dGdN = (-dG*(rS-rfp))@normal.T
             # print(dGdN.shape)
+            # Green's function derivative 
             dG = -((rS-rfp)*(np.exp(-1j*k0*r_rS)/(4*np.pi*r_rS**2))*(1j*k0 +1/r_rS))
-            
-            # print(normal.shape,dG.shape)
-
             dGdN = np.dot(dG,normal.T)
+            # print(normal.shape,dG.shape)
             # dGdN = dG@normal
             # print(dGdN.shape)
+            # Green's function
             Gc = np.exp(-1j*k0*r_rS)/(4*np.pi*r_rS)
+            # Assemble matrix
             Gf[fp,es] = np.mean(Gc)*area
             I2[fp,es] = np.mean(dGdN)*area
-     
     return Gf,I2,Pifp
+
 def evaluate_p_field(I2,Gf,Pifp,pC):
-    pScat = I2@pC
-    pInc = Pifp
+    """Evaluate scattered and total pressure at field point.
+    
+    This assembler will use a triangle and constant
+    interpolation. It assembles the matrices Gf, I2 and the matrix Pifp 
+    (cotaining the incident pressure at the field points
+     caused by each sound source).
+    
+    Parameters
+    ----------
+    If : numpy ndArray
+        BEM matrix.
+    Gf : numpy ndArray # FixMe: Gf is not used in this function
+        BEM matrix.
+    Pifp : numpy ndArray
+        Matrix with the incident pressure caused by each sound source at field pts.
+    Pc : numpy ndArray
+        Surface pressure computed by BEM.
+        
+    Returns
+    -------
+    pTotal : numpy ndArray
+        Total sound pressure at field point.
+    pScat : numpy ndArray
+        Scattered sound pressure at field point.
+    """
+    # scattered
+    pScat = I2@pC # FixMe: Consider using np.dot for numba compatibility
+    # incident
+    pInc = Pifp # FixMe - no need for this line
+    # total sound pressure
     pTotal = pScat + pInc
     return pTotal,pScat
 
 # @numba.jitclass
 class BEM3D:
+    """Class to set up 3D BEM simulation.
+    
+    Attributes
+    ----------
+    
+    Methods
+    -------
+    
+    """
+    
     def __init__(self,Grid,S,R,AP,AC,BC=None):
-        """
-        Initializes FEM3D Class
+        """Initialize BEM3D Class.
 
         Parameters
         ----------
-        Grid : GridImport()
-            GridImport object created with femder.GridImport('YOURGEO.geo',fmax,maxSize,scale).
-        S: Source
+        Grid : object GridImport()
+            GridImport object created with femder.
+            GridImport('YOURGEO.geo',fmax,maxSize,scale).
+        S: object (Source)
             Source object containing source coordinates
-        R: Receiver
+        R: object (Receiver)
             Receiver object containing receiver coordinates
-        AP : AirProperties
-            AirPropeties object containing, well, air properties.
-        AC : AlgControls
-            Defines frequency configuration for calculation.
-        BC : BoundaryConditions()
-            BoundaryConditions object containg impedances for each assigned Physical Group in gmsh.
+        AP : object (AirProperties)
+            AirPropeties object containing air properties.
+        AC : object (AlgControls)
+            AlgControls object defines frequency configuration for calculation.
+        BC : object (BoundaryConditions)
+            BoundaryConditions object containg impedances for each assigned
+            Physical Group in gmsh.
 
         Returns
         -------
         None.
-
         """
         self.BC= BC
         if BC != None:
             self.mu = BC.mu
             self.v = BC.v
         
-        
-        #AirProperties
+        #AlgControls
+        self.AC = AC #FixMe - We can maybe remove this
         self.freq = AC.freq
 
-        self.AC = AC
-        self.AP = AP
-        ##AlgControls
+        #AirProperties
+        self.AP = AP #FixMe - We can maybe remove this       
         self.c0 = AP.c0
         self.rho0 = AP.rho0
-        
         self.w = 2*np.pi*self.freq
         self.k = self.w/self.c0
         
-        
+        # Souces
         self.S = S
+        
+        # Receivers
         self.R = R
-        #%Mesh
+        
+        #Mesh
         if Grid != None:
             self.grid = Grid
             self.nos = Grid.nos
@@ -693,83 +1159,99 @@ class BEM3D:
             self.NumElemC = Grid.NumElemC
             self.order = Grid.order
             self.path_to_geo = Grid.path_to_geo
+        #What is this?
         self.pR = None
         self.pN = None
         self.rho = {}
         self.c = {}
         
-
+        # compute normals of all elements (function call)
         self.normals = compute_normals(self.nos, self.elem_surf)
+        # compute areas of all elements (function call)
         self.areas= compute_areas(self.nos, self.elem_surf)
+        # type of interpolation
         self.interp = 'linear'
-        self.coloc_cre = 'integ'
+        self.coloc_cte = 'integ'
         self.individual_sources = False
         
-
     def compute(self,timeit=True,printless=True):
-        """
-        Computes acoustic pressure for every node in the mesh.
+        """Compute the acoustic pressure for every node in the mesh.
 
         Parameters
         ----------
-        timeit : TYPE, optional
-            Prints solve time. The default is True.
+        timeit : bool
+            Wehter to print solving time or not. The default is True.
+        printless : bool #FixMe - are we using it?
+            Wehter to print stuff or not. The default is True.
 
         Returns
         -------
         None.
 
         """
-        
+        # time when calculations started
         then = time.time()
         # print('Computation has started')
-        p = []
-        pS = []
+        p = [] # FixMe: Consider pre-allocating for numba
+        pS = [] # FixMe: Consider pre-allocating for numba
 
-        for i in tqdm(range(len(self.freq))):
-            
-            
+        # loop through all frequencies
+        bar = tqdm(total = len(self.freq), leave = False,
+            desc = 'Surf. pres. for each frequency')
+        for i in range(len(self.freq)): #tqdm(range(len(self.freq)))
+            # choose interpolation (constant)
             if self.interp == 'constant':
-                Gs,I,Pi = assemble_BEM(self.elem_surf,self.nos,self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                Gs,I,Pi = assemble_BEM(self.elem_surf,self.nos,self.S.coord,
+                                       self.w[i],self.k[i],self.rho0,
+                                       self.normals,self.areas)
+                # C matrix is 0.5 * identity
                 C = 0.5*np.eye(len(self.elem_surf))
                 if self.individual_sources==True:
                     for es in range(len(self.S.coord)):
                         
                         pC,info = gmres((C-I),(Pi[:,es]))
-                        pS.append(pC)
+                        pS.append(pC) # FixMe: Consider pre-allocating for numba
                         
                 elif self.individual_sources ==False:
                     pC,info = gmres((C-I),(np.sum(Pi,axis=1)))
-                    pS = pC
+                    pS = pC # FixMe: Consider pre-allocating for numba
                 
                 # pC,info = gmres((C-I),(Pi))
-            elif self.interp == 'linear':
-                Gs,I,Cc,Pi = assemble_bem_3gauss_prepost(self.elem_surf,self.nos,self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
-                
+            # choose interpolation (linear)
+            elif self.interp == 'linear': #FixMe: consider using else
+                Gs,I,Cc,Pi = assemble_bem_3gauss_prepost(self.elem_surf,self.nos,
+                                                         self.S.coord,self.w[i],
+                                                         self.k[i],self.rho0,
+                                                         self.normals,self.areas)
+                # choose C cte matrix
                 if self.coloc_cte == 'cte':
+                    # C matrix is 0.5 * identity
                     C = 0.5*np.eye(len(self.nos))
                 elif self.coloc_cte == 'integ':
+                    # C matrix calculated with BEM
                     C = np.eye(len(self.nos)) - Cc
                 # C = 0.5*np.eye(len(self.nos))
                 
                 if self.individual_sources==True:
                     for es in range(len(self.S.coord)):
-                        
                         pC,info = gmres((C+I),(Pi[:,es]))
-                        pS.append(pC)
+                        pS.append(pC) # FixMe: Consider pre-allocating for numba
                         
-                elif self.individual_sources ==False:
+                elif self.individual_sources ==False: #FixMe - You can use else
                     pC,info = gmres((C+I),(np.sum(Pi,axis=1)))
-                    pS = pC
+                    pS = pC # FixMe: Consider pre-allocating for numba
                 
             if info != 0:
                 print('Solver failed to converge')
-            
-            p.append(pS)
-        
+            p.append(pS) # FixMe: Consider pre-allocating for numba
+            bar.update(1)
+        bar.close()
         self.pC = p
+        
+        # total time of the simulation
         self.t = time.time()-then
         
+        # if timeit is True, then print time in nice units
         if timeit:
             if self.t <= 60:
                 print(f'Time taken: {self.t} s')
@@ -779,38 +1261,42 @@ class BEM3D:
                 print(f'Time taken: {self.t/60} min')
                             
       
-    def evaluate(self,R,plot=False):
-        """
-        Evaluates pressure at a given receiver coordinate, for best results, include receiver
-        coordinates as nodes in mesh, by passing Receiver() in GridImport3D().
+    def evaluate(self,R,plot=False): #FixMe: You instantiate the BEM object with a receiver object. Why pass it here?
+        """Evaluate pressure at field points.
+        
+        Evaluates pressure at a set of given receivers. For best results,
+        include receiver coordinates as nodes in mesh, by passing Receiver()
+        in GridImport3D().
 
         Parameters
         ----------
-        R : Receiver()
+        R : object (Receiver)
             Receiver object with receiver coodinates.
-        plot : Bool, optional
+        plot : bool - FixMe: Consider using another method for this
             Plots SPL for given nodes, if len(R)>1, also plots average. The default is False.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
-
-        """
-        
-        
+        pt : numpy ndArray
+            Total sound pressure (incident and scattered).
+        ps : numpy ndArray
+            scattered sound pressure (incident removed)
+        """   
         self.R = R
-        pT = []
-        pS = []
-        pTT = []
-        pSS = []
+        pT = [] # FixMe: Consider pre-allocating for numba
+        pS = [] # FixMe: Consider pre-allocating for numba
+        pTT = [] # FixMe: Consider pre-allocating for numba
+        pSS = [] # FixMe: Consider pre-allocating for numba
+        # loop through frequencies
         for i in range(len(self.freq)):
-                
             if self.interp == 'constant':
                 if self.individual_sources==True:
                     for es in range(len(self.S.coord)):
                         
-                        Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                        Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,
+                                                        self.nos, self.S.coord,
+                                                        self.w[i],self.k[i],self.rho0,
+                                                        self.normals,self.areas)
                         ptt,pss = evaluate_p_field(I2,Gf,Pifp[:,es],self.pC[i][es])                        
                         
                         pTT.append(ptt)
@@ -819,34 +1305,36 @@ class BEM3D:
                     pT.append(np.array(pTT))
                     pS.append(np.array(pSS))
                 
-                elif self.individual_sources ==False:
+                elif self.individual_sources ==False: #FixMe: Consider using else
                     Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
                     ptt,pss = evaluate_p_field(I2,Gf,np.sum(Pifp,axis=1),self.pC[i][es])                        
                     
-                    pT.append(ptt)
-                    pS.append(pss)  
-                    
+                    pT.append(ptt) # FixMe: Consider pre-allocating for numba
+                    pS.append(pss) # FixMe: Consider pre-allocating for numba                  
                 # Gf,I2,Pifp = evaluate_field_BEM(self.R.coord, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
              
-            if self.interp == 'linear':
+            if self.interp == 'linear': #FixMe: Consider using else
                 if self.individual_sources==True:
                     for es in range(len(self.S.coord)):
                         
-                        Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
+                        Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,
+                                                                 self.nos, self.S.coord,
+                                                                 self.w[i],self.k[i],self.rho0,
+                                                                 self.normals,self.areas)
                         ptt,pss = evaluate_p_field(I2,Gf,Pifp[:,es],self.pC[i][es])                        
                         
-                        pTT.append(ptt)
-                        pSS.append(pss)
+                        pTT.append(ptt) # FixMe: Consider pre-allocating for numba
+                        pSS.append(pss) # FixMe: Consider pre-allocating for numba
                 
-                    pT.append(np.array(pTT))
-                    pS.append(np.array(pSS))
+                    pT.append(np.array(pTT)) # FixMe: Consider pre-allocating for numba
+                    pS.append(np.array(pSS)) # FixMe: Consider pre-allocating for numba
                 
                 elif self.individual_sources ==False:
                     Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
                     ptt,pss = evaluate_p_field(I2,Gf,np.sum(Pifp,axis=1),self.pC[i])                        
                     
-                    pT.append(ptt)
-                    pS.append(pss)  
+                    pT.append(ptt) # FixMe: Consider pre-allocating for numba
+                    pS.append(pss) # FixMe: Consider pre-allocating for numba
                 # Gf,I2,Pifp = evaluate_bem_3gauss_prepost(self.R, self.elem_surf,self.nos, self.S.coord,self.w[i],self.k[i],self.rho0,self.normals,self.areas)
             
             # print(Gf.shape)
@@ -858,14 +1346,13 @@ class BEM3D:
             
         self.pT = (pT)
         self.pS = (pS)
-        
+        # if plot is true
         if plot:
             if len(R.theta > 0):
                 fig = plt.figure()
                 ax = fig.add_subplot(111, projection='polar')
                 ax.set_thetamin(np.amin(np.rad2deg(R.theta)))
                 ax.set_thetamax(np.amax(np.rad2deg(R.theta)))
-                
                 ax.plot(R.theta, fd.p2SPL(self.pS[i,:]))
         return self.pT,self.pS
     
