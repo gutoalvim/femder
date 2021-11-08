@@ -1126,7 +1126,7 @@ class FEM3D:
                         self.V = assemble_A10_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
 
                 pN = []
-                
+
                 
                 # print('Solving System')
                 for ii in range(len(self.S.coord)):
@@ -1150,6 +1150,7 @@ class FEM3D:
                         ps = pSolve.run_pardiso(33, b.todense())
                         pSolve.clear()
                         pN.append(ps)
+                    a=1
                 if len(self.v) >0:
                     
                     for N in tqdm(range(len(self.freq))):
@@ -1177,7 +1178,6 @@ class FEM3D:
                         ps = pSolve.run_pardiso(33, b.todense())
                         pSolve.clear()
                         pN.append(ps)
-                self.A = Ag
                 # self.Vn = Vn
             else:
                 pN = []
@@ -1785,7 +1785,7 @@ class FEM3D:
                 fig.write_image(filename+'.'+extension, scale=2)
         fig.show()
         fig.show()       
-    def evaluate(self,R,plot=False):
+    def evaluate(self,R,interpolation_tolerance = 0.001, plot=False):
         """
         Evaluates pressure at a given receiver coordinate, for best results, include receiver
         coordinates as nodes in mesh, by passing Receiver() in GridImport3D().
@@ -1803,34 +1803,61 @@ class FEM3D:
             DESCRIPTION.
 
         """
-        
+        # pressure_receiver = []
+        # for i in range(len(self.receiver_positions)):
+        #     closest_node_to_receiver = numerical.closest_node(self.vertices, evaluation_positions[i, :])
+        #     if np.linalg.norm(
+        #             evaluation_positions[i, :] - self.vertices[closest_node_to_receiver]) < interpolation_tolerance:
+        #         pressure_receiver.append(self.node_pressure[:, closest_node_to_receiver])
+        #     else:
+        #         pressure_receiver.append(numerical.node_pressure_interpolation(self.vertices, self.volume_elements,
+        #                                                                        evaluation_positions[i, :],
+        #                                                                        self.node_pressure))
+        #
+        # self.pressure_receiver = np.asarray(pressure_receiver).T
         
         self.R = R
 
-        self.pR = np.ones([len(self.freq),len(R.coord)],dtype = np.complex128)
-        if plot:
-            plt.style.use('seaborn-notebook')
-            plt.figure(figsize=(5*1.62,5))
-            if len(self.pR[0,:]) > 1:
-                linest = ':'
+        self.pR = [] #np.ones([len(self.freq),len(R.coord)],dtype = np.complex128)
+
+        for i in range(len(self.R.coord)):
+            closest_node_to_receiver = closest_node(self.nos, self.R.coord[i, :])
+            if np.linalg.norm(
+                    self.R.coord[i, :] - self.nos[closest_node_to_receiver]) < interpolation_tolerance:
+                self.pR.append(self.pN[:, closest_node(self.nos, R.coord[i, :])])
             else:
-                linest = '-'
-            for i in range(len(self.R.coord)):
-                self.pR[:,i] = self.pN[:,closest_node(self.nos,R.coord[i,:])]
-                # self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
-                plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[i,:]}m')
-                
-            if len(self.R.coord) > 1:
-                plt.semilogx(self.freq,np.mean(p2SPL(self.pR),axis=1),label='Average',linewidth = 5)
-            
-            plt.grid()
-            plt.legend()
-            plt.xlabel('Frequency[Hz]')
-            plt.ylabel('SPL [dB]')
-            # plt.show()
-        else:
-            for i in range(len(self.R.coord)):
-                self.pR[:,i] = self.pN[:,closest_node(self.nos,R.coord[i,:])]
+                self.pR.append(coord_interpolation(self.nos, self.elem_vol, self.R.coord[i, :], self.pN))
+        self.pR = np.asarray(self.pR).squeeze().T
+        # print(self.pR.shape)
+
+        # if plot:
+        #     plt.style.use('seaborn-notebook')
+        #     plt.figure(figsize=(5*1.62,5))
+        #     if len(self.pR[0,:]) > 1:
+        #         linest = ':'
+        #     else:
+        #         linest = '-'
+        #     for i in range(len(self.R.coord)):
+        #         closest_node_to_receiver = closest_node(self.nos, self.R[i, :])
+        #         if np.linalg.norm(
+        #                 self.R[i, :] - self.vertices[closest_node_to_receiver]) < interpolation_tolerance:
+        #             self.pR.append(self.pN[:,closest_node(self.nos,R.coord[i,:])])
+        #         else:
+        #             self.pR.append(coord_interpolation(self.nos, self.elem_vol, self.R[i, :], self.pN))
+        #         # self.pR[:,i] = coord_interpolation(self.nos, self.elem_vol, R.coord[i,:], self.pN)
+        #         # plt.semilogx(self.freq,p2SPL(self.pR[:,i]),linestyle = linest,label=f'R{i} | {self.R.coord[i,:]}m')
+        #
+        #     # if len(self.R.coord) > 1:
+        #     #     plt.semilogx(self.freq,np.mean(p2SPL(self.pR),axis=1),label='Average',linewidth = 5)
+        #     #
+        #     plt.grid()
+        #     plt.legend()
+        #     plt.xlabel('Frequency[Hz]')
+        #     plt.ylabel('SPL [dB]')
+        #     # plt.show()
+        # else:
+        #     for i in range(len(self.R.coord)):
+        #         self.pR[:,i] = self.pN[:,closest_node(self.nos,R.coord[i,:])]
         return self.pR
     
     def evaluate_physical_group(self,domain_index,average=True,plot=False):
@@ -2035,7 +2062,7 @@ class FEM3D:
             else:
                 fig.write_image(filename+'.'+extension, scale=2)
         fig.show()
-        
+        return fig
     def pressure_field(self, Pmin=None, frequencies=[60], Pmax=None, axis=['xy', 'yz', 'xz', 'boundary'],
                        axis_visibility={'xy': True, 'yz': True, 'xz': 'legendonly', 'boundary': True},
                        coord_axis={'xy': None, 'yz': None, 'xz': None, 'boundary': None}, dilate_amount=0.9,
