@@ -5,6 +5,39 @@ Created on Sat Nov 28 00:23:08 2020
 @author: gutoa
 """
 import numpy as np
+import os
+import meshio
+
+import gmsh
+import sys
+import tempfile
+
+def write_and_extract_mesh_data(mesh_data):
+    """
+    Writes mesh into a temporary file and extracts mesh data with Meshio.
+
+    Parameters
+    ----------
+    dim : int
+        Mesh dimension.
+    mesh_data : dict
+        Dictionary that the mesh data will be written into.
+    """
+    out_data = tempfile.NamedTemporaryFile(suffix=".msh", delete=False)
+    gmsh.write(out_data.name)
+    mesh_file = meshio.read(out_data.name)
+    mesh_data["vertices"] = mesh_file.points
+    mesh_data["elem_surf"] = mesh_file.cells_dict["triangle"].astype("uint32")
+    mesh_data["elem_vol"] = mesh_file.cells_dict["tetra"].astype("uint32")
+    # try:
+    mesh_data["domain_index_surf"] = mesh_file.cell_data_dict["gmsh:physical"]["triangle"]
+    mesh_data["domain_index_vol"] = mesh_file.cell_data_dict["gmsh:physical"]["tetra"]
+    # except:
+    #     mesh_data["domain_index_surf"] = None
+    #     mesh_data["domain_index_vol"] = None
+    out_data.close()
+    os.remove(out_data.name)
+
 class GridImport():
     def __init__(self,AP,path_to_geo, fmax=1000, num_freq=6, plot=False,scale=1):
         self.path_to_geo = path_to_geo
@@ -14,14 +47,7 @@ class GridImport():
         self.scale = scale
         self.c0 = np.real(AP.c0)
         
-        
-    
-        import meshio
-        
-        import gmsh
-        import sys
-        import os
-        
+
         gmsh.initialize(sys.argv)
         gmsh.open(self.path_to_geo) # Open msh
         
@@ -55,7 +81,7 @@ class GridImport():
         os.remove(path_name+'/current_mesh.msh')
         
 class GridImport3D:
-    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3,center_geom=False,add_rng=False):
+    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3,center_geom=False,add_rng=False, load_method="meshio"):
         
         self.R = R
         self.S = S
@@ -66,120 +92,126 @@ class GridImport3D:
         self.order = order
         self.path_to_geo_unrolled = None
         self.c0 = np.real(AP.c0)
-    
-        import meshio
-        import gmsh
-        import sys
-        import os
+
         filename, file_extension = os.path.splitext(path_to_geo)
         # print(file_extension)
-        file_list = ['.geo','.geo_unrolled','.brep','.igs','.iges','.stp','.step']
+        file_list = ['.geo','.geo_unrolled','.brep','.igs','.iges','.stp','.step', '.IGS']
         if file_extension in file_list:
             gmsh.initialize(sys.argv)
             gmsh.open(self.path_to_geo) # Open msh
-    
-            # dT = gmsh.model.getEntities()
-            # gmsh.model.occ.dilate(dT,0,0,0,1/scale,1/scale,1/scale)
+
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.Algorithm", 1)
 
-            # print((self.c0*self.scale)/self.fmax/self.num_freq)
-            lc = 0#(self.c0*self.scale)/self.fmax/self.num_freq
-            tg = gmsh.model.occ.getEntities(3)
+            lc = 0
+            tg = gmsh.model.getEntities(3)
             pgv = gmsh.model.getPhysicalGroups(3)
+
             if len(pgv) == 0:
                 pg_start=1
                 physical_groups = [i for i in range(pg_start, len(tg) + pg_start)]
                 for entity, i in zip(tg, range(len(tg))):
                     gmsh.model.addPhysicalGroup(entity[0], [entity[1]], physical_groups[i])
-    
-            # tg2 = gmsh.model.occ.getEntities(2)
-            if self.R != None:
-                for i in range(len(self.R.coord)):
-                    it = gmsh.model.occ.addPoint(self.R.coord[i,0], self.R.coord[i,1], self.R.coord[i,2], lc, -1)
-                    gmsh.model.occ.synchronize()
-                    gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
-    
-            if self.S != None:
-                for i in range(len(self.S.coord)):
-                    it = gmsh.model.occ.addPoint(self.S.coord[i,0], self.S.coord[i,1], self.S.coord[i,2], lc, -1)
-                    gmsh.model.occ.synchronize()
-                    gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
-             
+                tg = gmsh.model.getEntities(3)
 
-            # gmsh.model.mesh.embed(0, [15000], 3, tg[0][1])
-            gmsh.model.mesh.generate(meshDim)
-            gmsh.model.mesh.setOrder(self.order)
-            # gmsh.model.mesh.optimize(method='Relocate3D',force=False)
-            if self.order == 1:
-                if meshDim == 3:
-                    elemTy,elemTa,nodeTags = gmsh.model.mesh.getElements(3)
-                    self.elem_vol = np.array(nodeTags,dtype=int).reshape(-1,4)-1
-                elif meshDim == 2:
-                    self.elem_vol = []
-                
-                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
-                self.elem_surf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
-                vtags, vxyz, _ = gmsh.model.mesh.getNodes()
-                self.nos = vxyz.reshape((-1, 3))/scale
-                
-            if self.order == 2:
-                if meshDim == 3:
-                    elemTy,elemTa,nodeTags = gmsh.model.mesh.getElements(3)
-                    self.elem_vol = np.array(nodeTags,dtype=int).reshape(-1,10)-1
-                elif meshDim == 2:
-                    self.elem_vol = []
-                elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
-                self.elem_surf = np.array(nodeTagss,dtype=int).reshape(-1,6)-1
-                vtags, vxyz, _ = gmsh.model.mesh.getNodes()
-                self.nos = vxyz.reshape((-1, 3))/scale
-                
-                
-            pg = gmsh.model.getPhysicalGroups(2)  
-            tg2 = gmsh.model.occ.getEntities(2)
-            print(pg)
+            pg = gmsh.model.getPhysicalGroups(2)
+            tg2 = gmsh.model.getEntities(2)
             if len(pg) == 0:
                 surfaces_entities = tg2
                 pg_start = 2
                 physical_groups = [i for i in range(pg_start, len(surfaces_entities) + pg_start)]
                 for entity, i in zip(surfaces_entities, range(len(surfaces_entities))):
                     gmsh.model.addPhysicalGroup(entity[0], [entity[1]], physical_groups[i])
-            va= []
-            vpg = []
-            pg = gmsh.model.getPhysicalGroups(2) 
-            for i in range(len(pg)):
-                v = gmsh.model.getEntitiesForPhysicalGroup(2, pg[i][1])
-                for ii in range(len(v)):
-                    # print(v[ii])
-                    vvv = gmsh.model.mesh.getElements(2,v[ii])[1][0]
-                    pgones = np.ones_like(vvv)*pg[i][1]
-                    va = np.hstack((va,vvv))
-                    # print(pgones)
-                    vpg = np.hstack((vpg,pgones))
-            
-            vas = np.argsort(va)
-            self.domain_index_surf = vpg[vas] 
-            # print(vas)
-            if meshDim == 3:            
-                pgv = gmsh.model.getPhysicalGroups(3)
-                # print(pgv)
-                vav= []
-                vpgv = []
-                for i in range(len(pgv)):
-                    vv = gmsh.model.getEntitiesForPhysicalGroup(3, pgv[i][1])
-                    for ii in range(len(vv)):
+                tg2 = gmsh.model.occ.getEntities(2)
+
+            if self.R != None:
+                for i in range(len(self.R.coord)):
+                    it = gmsh.model.occ.addPoint(self.R.coord[i,0], self.R.coord[i,1], self.R.coord[i,2], lc, -1)
+                    gmsh.model.occ.synchronize()
+                    gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
+
+            if self.S != None:
+                for i in range(len(self.S.coord)):
+                    it = gmsh.model.occ.addPoint(self.S.coord[i,0], self.S.coord[i,1], self.S.coord[i,2], lc, -1)
+                    gmsh.model.occ.synchronize()
+                    gmsh.model.mesh.embed(0, [it], 3, tg[0][1])
+
+            # if self.S != None or self.R != None:
+            #     gmsh.model.mesh.embed(0, [15000], 3, tg[0][1])
+            gmsh.model.mesh.generate(meshDim)
+            gmsh.model.mesh.setOrder(self.order)
+            # gmsh.model.mesh.optimize(method='Relocate3D',force=False)
+            if load_method == "meshio":
+                mesh_data = {}
+                write_and_extract_mesh_data(mesh_data)
+                self.nos = mesh_data["vertices"]
+                self.elem_surf = mesh_data["elem_surf"]
+                self.elem_vol = mesh_data["elem_vol"]
+                self.elem_surf = mesh_data["elem_surf"]
+                self.domain_index_surf = mesh_data["domain_index_surf"]
+                self.domain_index_vol = mesh_data["domain_index_vol"]
+
+            if load_method != "meshio":
+                if self.order == 1:
+                    if meshDim == 3:
+                        elemTy,elemTa,nodeTags = gmsh.model.mesh.getElements(3)
+                        self.elem_vol = np.array(nodeTags,dtype=int).reshape(-1,4)-1
+                    elif meshDim == 2:
+                        self.elem_vol = []
+
+                    elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+                    self.elem_surf = np.array(nodeTagss,dtype=int).reshape(-1,3)-1
+                    vtags, vxyz, _ = gmsh.model.mesh.getNodes()
+                    self.nos = vxyz.reshape((-1, 3))/scale
+
+                if self.order == 2:
+                    if meshDim == 3:
+                        elemTy,elemTa,nodeTags = gmsh.model.mesh.getElements(3)
+                        self.elem_vol = np.array(nodeTags,dtype=int).reshape(-1,10)-1
+                    elif meshDim == 2:
+                        self.elem_vol = []
+                    elemTys,elemTas,nodeTagss = gmsh.model.mesh.getElements(2)
+                    self.elem_surf = np.array(nodeTagss,dtype=int).reshape(-1,6)-1
+                    vtags, vxyz, _ = gmsh.model.mesh.getNodes()
+                    self.nos = vxyz.reshape((-1, 3))/scale
+
+
+
+                va= []
+                vpg = []
+                for i in range(len(pg)):
+                    v = gmsh.model.getEntitiesForPhysicalGroup(2, pg[i][1])
+                    for ii in range(len(v)):
                         # print(v[ii])
-                        vvv = gmsh.model.mesh.getElements(3,vv[ii])[1][0]
-                        pgones = np.ones_like(vvv)*pgv[i][1]
-                        vav = np.hstack((vav,vvv))
+                        vvv = gmsh.model.mesh.getElements(2,v[ii])[1][0]
+                        pgones = np.ones_like(vvv)*pg[i][1]
+                        va = np.hstack((va,vvv))
                         # print(pgones)
-                        vpgv = np.hstack((vpgv,pgones))
-                
-                vasv = np.argsort(vav)
-                self.domain_index_vol = vpgv[vasv]
-            elif meshDim == 2:
-                self.domain_index_vol = []
+                        vpg = np.hstack((vpg,pgones))
+
+                vas = np.argsort(va)
+                self.domain_index_surf = vpg[vas]
+                # print(vas)
+                if meshDim == 3:
+                    pgv = gmsh.model.getPhysicalGroups(3)
+                    # print(pgv)
+                    vav= []
+                    vpgv = []
+                    for i in range(len(pgv)):
+                        vv = gmsh.model.getEntitiesForPhysicalGroup(3, pgv[i][1])
+                        for ii in range(len(vv)):
+                            # print(v[ii])
+                            vvv = gmsh.model.mesh.getElements(3,vv[ii])[1][0]
+                            pgones = np.ones_like(vvv)*pgv[i][1]
+                            vav = np.hstack((vav,vvv))
+                            # print(pgones)
+                            vpgv = np.hstack((vpgv,pgones))
+
+                    vasv = np.argsort(vav)
+                    self.domain_index_vol = vpgv[vasv]
+                elif meshDim == 2:
+                    self.domain_index_vol = []
             # gmsh.model.mesh.optimize()
             gmsh.model.occ.synchronize()
                     
@@ -188,7 +220,25 @@ class GridImport3D:
                 self.nos = self.nos - center_coord
         
             if plot:
-                gmsh.fltk.run()                 
+                gmsh.fltk.run()
+                import plotly.io as pio
+                pio.renderers.default = "browser"
+                import plotly.figure_factory as ff
+                import plotly.graph_objs as go
+                vertices = self.nos.T  # [np.unique(self.elem_surf)].T
+                elements = self.elem_surf.T
+                fig = ff.create_trisurf(
+                    x=vertices[0, :],
+                    y=vertices[1, :],
+                    z=vertices[2, :],
+                    simplices=elements.T,
+                    color_func=elements.shape[1] * ["rgb(255, 222, 173)"],
+                )
+                fig['data'][0].update(opacity=0.3)
+
+                fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
+                fig.show()
+
             # gmsh.fltk.run()
             path_name = os.path.dirname(self.path_to_geo)
             
@@ -252,3 +302,5 @@ class GridImport3D:
         gmsh.model.mesh.setOrder(self.order)
         gmsh.fltk.run()
         gmsh.finalize()
+
+
