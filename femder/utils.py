@@ -12,6 +12,28 @@ from matplotlib.ticker import FormatStrFormatter
 import matplotlib.ticker as ticker
 import scipy.signal.windows as win
 
+def find_nearest(array, value):
+    """
+    Function to find closest frequency in frequency array.
+
+    Parameters
+    ----------
+    array : array
+        1D array in which to search for the closest value.
+    value : float or int
+        Value to be searched.
+
+    Returns
+    -------
+    Closest value found and its position index.
+    """
+    import numpy as np
+
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx], idx
+
+
 def closest_node(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()

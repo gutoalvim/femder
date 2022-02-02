@@ -2,7 +2,7 @@ import numpy as np
 #import toml
 import matplotlib.pyplot as plt
 import time, sys
-
+from femder import utils
 class AirProperties():
     def __init__(self, c0 = 343.0, rho0 = 1.21, temperature = 20.0, humid = 50.0, p_atm = 101325.0):
         '''
@@ -114,30 +114,31 @@ class AlgControls():
 
     def third_octave_fvec(self,fcentermin=100,fcentermax=2000,nperoct=1):
         
-        G = 10.0**(3.0 / 10.0)
+        G = 10.0 ** (3.0 / 10.0)
         fraction = 3
-        fcenter = np.array([
-    25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0, 400.0, 500.0, 630.0, 800.0, 1000.0,
-    1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0, 5000.0, 6300.0, 8000.0, 10000.0, 12500.0, 16000.0, 20000.0])
-        
-        fil = list(fcenter).index(fcentermin)
-        fim = list(fcenter).index(fcentermax)
-        fcenter = fcenter[fil:fim+1]
+        _fcenter = np.array([
+            25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0, 400.0, 500.0, 630.0, 800.0,
+            1000.0,
+            1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0, 5000.0, 6300.0, 8000.0, 10000.0, 12500.0, 16000.0, 20000.0])
 
-        flower = fcenter * G**(-1.0 / (2.0 * fraction))
-        fupper = fcenter * G**(+1.0 / (2.0 * fraction))
+        fil = utils.find_nearest(_fcenter, fcentermin)[1]
+        fim = utils.find_nearest(_fcenter, fcentermax)[1]
+        fcenter = _fcenter[fil:fim + 1]
+
+        flower = fcenter * G ** (-1.0 / (2.0 * fraction))
+        fupper = fcenter * G ** (+1.0 / (2.0 * fraction))
         fvec = []
         for i in range(len(flower)):
-            ff = np.linspace(flower[i],fupper[i],nperoct)
-            fvec = np.concatenate((fvec,ff),axis=0)
-            
-        self.freq = fvec
-        self.w = fvec*2*np.pi
-        self.k0 = self.w//self.c0
-        
-        if nperoct==1:
+            ff = np.linspace(flower[i], fupper[i], nperoct)
+            fvec.append(ff)# = np.concatenate((fvec, ff), axis=0)
+        fvec = np.asarray(fvec).ravel()
+        self.w = fvec * 2 * np.pi
+        self.k0 = self.w / self.c0
+
+        if nperoct == 1:
             self.freq = fcenter
-        self.fcenter = fcenter
+        self.freq = fvec
+        self.fcenter=fcenter
 ### Function to read the .toml file
 def load_cfg(cfgfile):
     '''

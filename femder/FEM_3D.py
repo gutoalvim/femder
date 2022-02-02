@@ -186,6 +186,7 @@ def coord_interpolation(nos,elem_vol,coord,pN):
 
     Nip = Ni.T@pN[:,con].T
     return Nip.T
+
 @jit
 def prob_elem(nos,elem,coord):
     cl1 = closest_node(nos, coord)
@@ -558,8 +559,9 @@ def assemble_Q_H_4_ULTRAFAST(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     NLB=np.size(Hez,1)
     Y=np.matlib.repmat(elem_vol[0:NumElemC,:],1,NLB).T.reshape(NLB,NLB,NumElemC)
     X = np.transpose(Y, (1, 0, 2))
-    H= coo_matrix((Hez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
-    Q= coo_matrix((Qez.ravel(),(X.ravel(),Y.ravel())), shape=[NumNosC, NumNosC]);
+
+    H= coo_matrix((Hez.ravel(),(X.ravel(), Y.ravel())), shape=[NumNosC, NumNosC])
+    Q= coo_matrix((Qez.ravel(),(X.ravel(), Y.ravel())), shape=[NumNosC, NumNosC])
     
     H = H.tocsc()
     Q = Q.tocsc()
@@ -1150,7 +1152,6 @@ class FEM3D:
                         ps = pSolve.run_pardiso(33, b.todense())
                         pSolve.clear()
                         pN.append(ps)
-                    a=1
                 if len(self.v) >0:
                     
                     for N in tqdm(range(len(self.freq))):
@@ -1264,7 +1265,7 @@ class FEM3D:
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
                 
-    def optimize_source_receiver_pos(self,num_grid_pts,star_average=True,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
+    def optimize_source_receiver_pos(self,geometry_points, geometry_height, geometry_angle, num_freq, num_grid_pts,star_average=True,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
                                      minimum_distance_between_speakers=1.2,speaker_receiver_height=1.2,min_distance_from_backwall=0.6,
                                      max_distance_from_backwall=1.5,neigs=50,
                                      plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
@@ -1321,7 +1322,10 @@ class FEM3D:
         """
         print('Initializing optimization')
         then = time.time()
-        sC,rC = fd.r_s_from_grid(self.grid,num_grid_pts,star_average=star_average,
+        _Grid = fd.GeometryGenerator(self.AP, np.amax(self.freq), num_freq)
+        _Grid.generate_symmetric_polygon_variheight(
+            geometry_points, geometry_height, geometry_angle)
+        sC,rC = fd.r_s_from_grid(_Grid,num_grid_pts,star_average=star_average,
                                  max_distance_from_wall=max_distance_from_wall,
                                  minimum_distance_between_speakers=minimum_distance_between_speakers,
                                  speaker_receiver_height = speaker_receiver_height,
@@ -1350,23 +1354,29 @@ class FEM3D:
             self.plot_problem(renderer=renderer,saveFig=saveFig,camera_angles=camera_angles)  
         fom = []
         
-        Grid = fd.GridImport3D(self.AP, self.path_to_geo,S=self.S,R=self.R,fmax = self.grid.fmax,num_freq = self.grid.num_freq,order=self.order)
+
+        # Grid = fd.GeometryGenerator(self.AP,np.amax(self.freq),num_freq).generate_symmetric_polygon_variheight(geometry_points,geometry_height,geometry_angle)
+        # Grid = fd.GridImport3D(self.AP, self.path_to_geo_unrolled, S=self.S, R=self.R, fmax = self.grid.fmax, num_freq = self.grid.num_freq, order=self.order, plot=True)
+        Grid = fd.GeometryGenerator(self.AP, np.amax(self.freq), num_freq)
+        Grid.generate_symmetric_polygon_variheight(
+            geometry_points, geometry_height, geometry_angle)
         self.nos = Grid.nos
         self.elem_surf = Grid.elem_surf
-        self.elem_vol =  Grid.elem_vol
+        self.elem_vol = Grid.elem_vol
         self.domain_index_surf =  Grid.domain_index_surf
-        self.domain_index_vol =Grid.domain_index_vol
-        self.number_ID_faces =Grid.number_ID_faces
+        self.domain_index_vol = Grid.domain_index_vol
+        self.number_ID_faces = Grid.number_ID_faces
         self.number_ID_vol = Grid.number_ID_vol
         self.NumNosC = Grid.NumNosC
         self.NumElemC = Grid.NumElemC
         self.order = Grid.order
+
         
         self.pOptim = []
         pOptim = []
         fom = []
         fig = plt.figure(figsize=(12,8))
-
+        Grid.plot_mesh()
         if method != 'None':
             if method == 'modal':
                 self.eigenfrequency(neigs,timeit=False)
@@ -2816,3 +2826,27 @@ class FEM3D:
         cloudpickle.dump(simulation_data, outfile)
         outfile.close()
         print('FEM saved successfully.')
+
+
+if __name__ == "__main__":
+    import femder as fd
+
+    path_to_geo = r"C:\Users\gutoa\Documents\SkaterXL\UFSM\MNAV\Code Testing\CR2_modificado.geo"
+    AP = fd.AirProperties(c0=343)
+    fmax = 20
+    AC = fd.AlgControls(AP, 20, fmax, 10)
+
+    S = fd.Source("spherical")
+
+    S.coord = np.array([[3, 2.25, 1.2]])
+    S.q = np.array([[0.0001]])
+
+    R = fd.Receiver()
+    R.star([0, 2.026, 1.230], 0.1)
+    # R.coord = np.array([2,6,1.2])
+
+    BC = fd.BC(AC, AP)
+    BC.normalized_admittance([1, 2, 3, 4, 5], 0.02)
+    grid = fd.GridImport3D(AP, path_to_geo, S=None, R=None, fmax=fmax,
+                           num_freq=6, scale=1, order=1, heal_shapes=False)
+    obj = fd.FEM3D(grid, S, R, AP, AC, BC)

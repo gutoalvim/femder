@@ -139,7 +139,69 @@ class Receiver():
                "surfaces": surfaces
                }
 
-        return arc, con     
+        return arc, con
+
+    def arc(self, radius=1, angles=(-30, 30), axis="z", center=None, n=None, flip=False):
+        """
+        Return an arc of points in the selected axis.
+
+        Parameters
+        ----------
+        radius : int or float, optional
+            Radius of the arc.
+        angles : tuple or list, optional
+            Defines how many points the arc will contain and at which angles in degrees.
+        axis : str, optional
+            Defines which plane the arc will be parallel to.
+        ref : int, optional
+            Index of what point in self.coords will be used as the pivot of the rotation. If not defined the centroid
+            of 'coords' will be used.
+        n : int, optional
+            Number of points that the range defined by the first and last elements of 'angles' will contain. If no
+            defined the number of points will be determined by the number of elements in 'angles'.
+        view : bool, optional
+            Option to visualize the grid with Plotly.
+
+        Returns
+        -------
+        (N, 3) array containing the arc points and a dictionary containing the connectivity data.
+        """
+        axis_dict = {"x": 0, "y": 1, "z": 2}
+
+        if center is None:
+            center = np.asarray([0, 0, 0])
+
+
+        points = {}
+        if n is None:
+            theta = [np.deg2rad(angle) for angle in angles]
+        else:
+            theta = np.linspace(np.deg2rad(angles[0]), np.deg2rad(angles[-1]), n)
+
+        for i in range(len(theta)):
+            x = center[0] + radius * np.cos(theta[i])
+            y = center[1] + radius * np.sin(theta[i]) if axis != "y" else center[2] + radius * np.sin(theta[i])
+            z = center[2] if axis != "y" else center[1]
+
+            if axis == "x":
+                points[i] = np.array([x, y, z])
+            if axis == "y":
+                points[i] = np.array([x, z, y])
+            if axis == "z":
+                points[i] = np.array([x, y, z])
+
+        arc = np.array(list(points.values()))
+        if angles[0] == 0 and angles[1] == 360:
+            arc = arc[:len(arc) - 1]
+
+        if flip:
+            arc[:, axis_dict[axis]] = -arc[:,axis_dict[axis]]
+
+        self.coord = arc
+        self.theta = theta
+        self.axis = axis
+        return arc
+
     def arc_receivers(self, radius = 1.0, ns = 10, angle_span = (-90, 90), d = (0,0,0), axis = "x",add_perp_arc=False ):
         points = {}
         theta = np.arange(angle_span[0]*np.pi/180, (angle_span[1]+ns)*np.pi/180, ns*np.pi/180)

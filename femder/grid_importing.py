@@ -28,10 +28,14 @@ def write_and_extract_mesh_data(mesh_data):
     mesh_file = meshio.read(out_data.name)
     mesh_data["vertices"] = mesh_file.points
     mesh_data["elem_surf"] = mesh_file.cells_dict["triangle"].astype("uint32")
-    mesh_data["elem_vol"] = mesh_file.cells_dict["tetra"].astype("uint32")
     # try:
     mesh_data["domain_index_surf"] = mesh_file.cell_data_dict["gmsh:physical"]["triangle"]
-    mesh_data["domain_index_vol"] = mesh_file.cell_data_dict["gmsh:physical"]["tetra"]
+    try:
+        mesh_data["domain_index_vol"] = mesh_file.cell_data_dict["gmsh:physical"]["tetra"]
+        mesh_data["elem_vol"] = mesh_file.cells_dict["tetra"].astype("uint32")
+    except:
+        pass
+
     # except:
     #     mesh_data["domain_index_surf"] = None
     #     mesh_data["domain_index_vol"] = None
@@ -81,7 +85,8 @@ class GridImport():
         os.remove(path_name+'/current_mesh.msh')
         
 class GridImport3D:
-    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,plot=False,meshDim=3,center_geom=False,add_rng=False, load_method="meshio"):
+    def __init__(self,AP,path_to_geo,S=None,R=None,fmax=1000, num_freq=6,scale=1,order=1,
+                 plot=False,meshDim=3,center_geom=False,add_rng=False, load_method="meshio", heal_shapes=False):
         
         self.R = R
         self.S = S
@@ -102,7 +107,7 @@ class GridImport3D:
 
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.scale)/self.fmax/self.num_freq)
-            gmsh.option.setNumber("Mesh.Algorithm", 1)
+            gmsh.option.setNumber("Mesh.Algorithm", 6)
 
             lc = 0
             tg = gmsh.model.getEntities(3)
@@ -139,19 +144,24 @@ class GridImport3D:
 
             # if self.S != None or self.R != None:
             #     gmsh.model.mesh.embed(0, [15000], 3, tg[0][1])
+            if heal_shapes:
+                gmsh.model.occ.healShapes()
+            gmsh.model.occ.synchronize()
             gmsh.model.mesh.generate(meshDim)
             gmsh.model.mesh.setOrder(self.order)
             # gmsh.model.mesh.optimize(method='Relocate3D',force=False)
             if load_method == "meshio":
                 mesh_data = {}
                 write_and_extract_mesh_data(mesh_data)
-                self.nos = mesh_data["vertices"]
-                self.elem_surf = mesh_data["elem_surf"]
-                self.elem_vol = mesh_data["elem_vol"]
+                self.nos = mesh_data["vertices"]/scale
                 self.elem_surf = mesh_data["elem_surf"]
                 self.domain_index_surf = mesh_data["domain_index_surf"]
-                self.domain_index_vol = mesh_data["domain_index_vol"]
-
+                try:
+                    self.elem_vol = mesh_data["elem_vol"]
+                    self.domain_index_vol = mesh_data["domain_index_vol"]
+                except:
+                    self.elem_vol = None
+                    self.domain_index_vol = None
             if load_method != "meshio":
                 if self.order == 1:
                     if meshDim == 3:
@@ -243,6 +253,7 @@ class GridImport3D:
             path_name = os.path.dirname(self.path_to_geo)
             
             gmsh.write(path_name+'/current_mesh2.vtk')   
+            gmsh.write(path_name+'/current_mesh2.brep')
             self.model = gmsh.model
             gmsh.finalize() 
             
@@ -256,12 +267,20 @@ class GridImport3D:
             if self.order  == 1:
                 
                 self.elem_surf = msh.cells_dict["triangle"]
-                self.elem_vol = msh.cells_dict["tetra"]
-                
+
                 # self.domain_index_surf = msh.cell_data_dict["CellEntityIds"]["triangle"]
                 # self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra"]
-                self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
-                self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
+                try:
+                    self.elem_vol = msh.cells_dict["tetra"]
+                    self.domain_index_vol = msh.cell_data_dict["gmsh:physical"]["tetra"]
+                    self.domain_index_surf = msh.cell_data_dict["gmsh:physical"]["triangle"]
+
+                except:
+                    self.elem_vol = None
+                    self.domain_index_vol = None
+                    self.domain_index_surf = None
+
+
             elif self.order  == 2 and file_extension=='.msh':
                 
                 self.elem_surf = msh.cells_dict["triangle6"]
@@ -278,11 +297,15 @@ class GridImport3D:
             #     self.domain_index_vol = msh.cell_data_dict["CellEntityIds"]["tetra10"]
             
         self.number_ID_faces = np.unique(self.domain_index_surf)
-        self.number_ID_vol = np.unique(self.domain_index_vol)
-        
-        self.NumNosC = len(self.nos)
-        self.NumElemC = len(self.elem_vol)
 
+        self.NumNosC = len(self.nos)
+
+        if meshDim == 3:
+            self.NumElemC = len(self.elem_vol)
+            self.number_ID_vol = np.unique(self.domain_index_vol)
+        else:
+            self.NumElemC = None
+            self.number_ID_vol = None
         if add_rng == True:
             rng_nos = 0.1*np.random.rand(len(self.nos[:,0]),len(self.nos[0,:]))
             self.nos = self.nos + rng_nos
