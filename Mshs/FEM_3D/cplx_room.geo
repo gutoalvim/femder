@@ -1,5 +1,9 @@
 Merge "cplx_room.brep";
 //+
-Physical Volume(24) = {1};
+Recursive Delete {
+  Surface{4}; 
+}
 //+
-Physical Surface(2) = {1, 3, 6, 2, 8, 5, 7, 10, 9, 4};
+Recursive Delete {
+  Curve{5}; Surface{4}; 
+}

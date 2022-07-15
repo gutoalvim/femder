@@ -2,7 +2,7 @@
 """
 Created on Sat Nov 28 23:33:54 2020
 
-@author: gutoa
+@author: Luiz Augusto Alvim & Paulo Mareze
 """
 import numpy as np
 from scipy.sparse.linalg import spsolve
@@ -463,8 +463,7 @@ def assemble_A10_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_
             Ae = int_tri10_3gauss(coord_el)
             A[con[:,np.newaxis],con] = A[con[:,np.newaxis],con] + Ae
         Aa.append(csc_matrix(A))
-  
-       
+
     return Aa
 @jit
 def int_tetra_simpl(coord_el,c0,rho0,npg):

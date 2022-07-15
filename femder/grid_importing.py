@@ -102,7 +102,7 @@ class GridImport3D:
         # print(file_extension)
         file_list = ['.geo','.geo_unrolled','.brep','.igs','.iges','.stp','.step', '.IGS']
         if file_extension in file_list:
-            gmsh.initialize(sys.argv)
+            gmsh.initialize()
             gmsh.open(self.path_to_geo) # Open msh
 
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)

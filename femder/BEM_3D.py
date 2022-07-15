@@ -10,6 +10,8 @@ import numba
 # from scipy.sparse.linalg import spsolve
 # from pypardiso import spsolve
 from scipy.sparse.linalg import gmres
+# from lapsolver import solve_dense as gmres
+
 import time 
 from tqdm import tqdm
 import warnings
@@ -303,7 +305,7 @@ def assemble_bem_3gauss_prepost(Incid,Coord,rF,w,k0,rho0,normals,areas):
             area = areas[es]
             normal = normals[es,:]
             Ge,He,Ce=bem_t3_post(coord_el,rS,w,k0,rho0,normal,area,N,GN,weights,detJa[es],xg[es],yg[es],zg[es]);
-            Gs[nod,con] =  Gs[nod,con] + Ge
+            Gs[nod,con] = Gs[nod,con] + Ge
             I[nod,con] = I[nod,con] + He
             Cc[nod,nod] = Cc[nod,nod] + Ce
             
@@ -443,7 +445,7 @@ def bem_t3_post(coord_el,coord_nod,w,k,rho0,normal,area,N,GN,weights,detJa,xg,yg
     
 
     n = normal
-    hn = np.array([[h1[0],h1[2],h1[2]],[h2[0],h2[2],h2[2]],[h3[0],h3[2],h3[2]]]).T
+    hn = np.array([[h1[0],h1[1],h1[2]],[h2[0],h2[1],h2[2]],[h3[0],h3[1],h3[2]]]).T
     # print(hn.shape)
     h= np.dot(hn,n.T); 
     
@@ -700,10 +702,10 @@ class BEM3D:
         
 
         self.normals = compute_normals(self.nos, self.elem_surf)
-        self.areas= compute_areas(self.nos, self.elem_surf)
+        self.areas = compute_areas(self.nos, self.elem_surf)
         self.interp = interp
         self.coloc_cte = 'integ'
-        self.individual_sources = False
+        self.individual_sources = True
         
 
     def compute(self,timeit=True,printless=True):
@@ -804,7 +806,7 @@ class BEM3D:
         pS = []
         pTT = []
         pSS = []
-        for i in range(len(self.freq)):
+        for i in tqdm(range(len(self.freq))):
                 
             if self.interp == 'constant':
                 if self.individual_sources==True:
@@ -936,12 +938,12 @@ class BEM3D:
         import plotly.figure_factory as ff
 
         
-        fi = np.argwhere(self.freq==freq)[0][0]
+        fi = find_nearest(self.freq, freq)
         vertices = self.nos.T
         # vertices = self.nos[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
         
-        values = np.real(p2SPL(self.pC[fi]))
+        values = np.abs(self.pC[fi])
         if d_range != None:
             d_range = np.amax(values)-d_range
             
