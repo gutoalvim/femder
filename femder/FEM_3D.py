@@ -1081,6 +1081,14 @@ class FEM3D:
                 
             self.c.update(self.BC.cc)
 
+    @property
+    def spl(self):
+        return fd.p2SPL(self.pR)
+
+    @property
+    def avg_spl(self):
+        return np.mean(self.spl, axis=0)
+
     def compute(self,timeit=True,printless=True):
         """
         Computes acoustic pressure for every node in the mesh.
@@ -2771,6 +2779,17 @@ class FEM3D:
 
         if returnValues:
             return fm_average_rLw
+
+
+    def plot_freq(self, title= ""):
+        assert self.pR is not None
+        y_list = [self.spl]
+        return fd.plot_tools.freq_response_plotly(len(y_list)*[self.freq], y_list, labels=None, visible=None, hover_data=None, linewidth=5, linestyle=None,
+                             colors=None, alpha=1, mode="trace", fig=None, xlim=None, ylim=None, update_layout=True,
+                             fig_size=(900, 620), show_fig=True, save_fig=False, folder_path=None, ticks=None,
+                             folder_name="Frequency Response", filename="freq_response", title=title,
+                             ylabel='SPL [dB]')
+
     def fem_save(self, filename=time.strftime("%Y%m%d-%H%M%S"), ext = ".pickle"):
         """
         Saves FEM3D simulation into a pickle file.
