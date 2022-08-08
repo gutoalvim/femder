@@ -343,7 +343,47 @@ def plot_pressure_field(plane_data, pressure_lim, source_index, axis, freq, fig=
 
 
 
+def layout_update_freq_plot(fig, xlabel= "Frequência [Hz]", ylabel= "NPS [dB]", width=920, height=600, legend_x=0.22, legend_y=0.22, font_size=20, font_size_legend=25,
+                            tickangle=25, margin_l=0, margin_r=5, margin_b=50, margin_t=5, legend_orientation="v"):
 
+    assert fig is not None
+
+    fig.update_layout(
+
+        font=dict(
+            size=font_size,
+        )
+    )
+
+    fig.update_layout(
+        width=width, height=height,
+        yaxis=dict(
+            title=ylabel,
+        ),
+        xaxis=dict(
+            title=xlabel,
+        ),
+        legend=dict(
+            x=legend_x,
+            y=legend_y,
+            traceorder="normal",
+            itemsizing='trace',
+            orientation=legend_orientation,
+            font=dict(
+                family="sans-serif",
+                size=font_size_legend,
+                color="black"
+            ),
+        )
+    )
+
+    fig.update_xaxes(tickangle=tickangle)
+    fig.update_layout(
+        title="",
+        margin=dict(l=margin_l, r=margin_r, b=margin_b, t=margin_t),
+    )
+
+    return fig
 def freq_response_plotly(x_list, y_list, labels=None, visible=None, hover_data=None, linewidth=3, linestyle=None,
                          colors=None, alpha=1, mode="trace", fig=None, xlim=None, ylim=None, update_layout=True,
                          fig_size=(1200, 720), show_fig=True, save_fig=False, folder_path=None, ticks = None,
@@ -498,60 +538,6 @@ def freq_response_plotly(x_list, y_list, labels=None, visible=None, hover_data=N
 
     return fig
 
-
-def update_plotly_layout_(fig, camera_dict, fig_title, fig_size, xlim, ylim, zlim, axis_titles,
-                          aspect_mode):
-    """
-    Updates the layout of a Plotly figure.
-
-    Parameters
-    ----------
-    fig : class
-        Plotly figure object.
-    camera_dict : dict
-        Default camera position that will be used at image display.
-    fig_title : str
-        Figure title.
-    fig_size : tuple or list
-        Width and height of the figure.
-    xlim : tuple or list
-        Minimum and maximum limits of the X axis.
-    ylim : tuple or list
-        Minimum and maximum limits of the Y axis.
-    zlim : tuple or list
-        Minimum and maximum limits of the Z axis.
-    axis_titles : list
-        List containing the string value for the names of the X, Y and Z axis.
-    aspect_mode : str
-        Aspect mode of the figure - 'auto', 'cube', 'data' or 'manual'.
-    """
-
-    fig.update_layout(
-        title=fig_title,
-        width=fig_size[0], height=fig_size[1],
-        scene=dict(
-            xaxis=dict(range=[xlim[0], xlim[1]]),
-            yaxis=dict(range=[ylim[0], ylim[1]]),
-            zaxis=dict(range=[zlim[0], zlim[1]]),
-            xaxis_title=axis_titles[0],
-            yaxis_title=axis_titles[1],
-            zaxis_title=axis_titles[2],
-            aspectmode=aspect_mode,
-            margin=dict(l=65, r=65, b=0, t=55)
-        ),
-        scene_camera=camera_dict,
-        scene2=dict(
-            xaxis=dict(range=[xlim[0], xlim[1]]),
-            yaxis=dict(range=[ylim[0], ylim[1]]),
-            zaxis=dict(range=[zlim[0], zlim[1]]),
-            xaxis_title=axis_titles[0],
-            yaxis_title=axis_titles[1],
-            zaxis_title=axis_titles[2],
-            aspectmode=aspect_mode,
-            margin=dict(l=65, r=65, b=0, t=55)
-        ),
-        scene2_camera=camera_dict,
-    )
 
 
 def set_plotly_renderer():

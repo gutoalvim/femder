@@ -435,6 +435,91 @@ def assemble_Q_H_4_FAST_2order_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,dom
     Q = Q.tocsc()
     return H,Q
 
+def integration_tri3_3gauss(shape_function):
+    """
+    Gauss integration for 3 points and tri3
+    Parameters
+    ----------
+    area_elem: float
+        Area of current element
+    Returns
+    -------
+
+    """
+    damp_elem = np.zeros((3, 3), dtype=np.float64)
+
+    gauss_weight = 1 / 9
+    # damp_elem = (np.einsum("i,j,k, j,i,k -> i,j", shape_function, shape_function)*area_elem)*gauss_weight
+    for index_x in range(3):
+        damp_elem += (np.dot(shape_function[index_x, :, :],
+                             shape_function[index_x, :, :].transpose(1, 0)) * gauss_weight)
+
+    return damp_elem
+
+def gauss_3_points():
+    """
+    Initializes the 3 points for gauss integration in tri3
+
+    Returns
+    -------
+    ptx: array
+        X coordinate for gauss integration
+    pty: array
+        Y coordinate for gauss integration
+
+    """
+    return np.array([1 / 6, 1 / 6, 2 / 3]), np.array([1 / 6, 2 / 3, 1 / 6])
+
+def assemble_surface_matrices(elem_surf, vertices, areas, domain_indices_surface, unique_domain_indices, order):
+    """
+    Assemble dampening FEM matrix for surface elements.
+
+    Parameters
+    ----------
+    unique_domain_indices: array
+    elem_surf: array
+
+    vertices: array
+    areas: array
+    domain_indices_surface: array
+    order: int
+
+    Returns
+    -------
+
+    """
+    gauss_integration = None
+    ptx, pty = gauss_3_points()
+    if order == 1:
+        gauss_integration = integration_tri3_3gauss
+    if order == 2:
+        return None
+    damp_global = []
+    shape_function = np.array([np.broadcast_to(ptx[:, None], (3, 3)).T,
+                               np.broadcast_to(pty[:, None], (3, 3)),
+                               1 - ptx - np.broadcast_to(pty[:, None], (3, 3))]).transpose(2, 0, 1)
+    _damp_elem = gauss_integration(shape_function)
+    len_vertices = len(vertices)
+    for bl in tqdm(unique_domain_indices, desc="FEM | Assembling surface matrix", bar_format='{l_bar}{bar:25}{r_bar}'):
+        surface_index = np.argwhere(domain_indices_surface == bl).ravel()
+        damp = np.zeros((3, 3, len(elem_surf[surface_index])), dtype="float64")
+        for es in range(len(elem_surf[surface_index])):
+            con = elem_surf[surface_index[es], :]
+            area_elem = areas[surface_index[es]]
+            damp_elem = _damp_elem * area_elem
+            damp[:, :, es] = damp_elem
+
+        _nlb = np.size(damp, 1)
+        len_elem_vol = len(elem_surf[surface_index])
+        assemble_y = np.matlib.repmat(elem_surf[surface_index], 1, _nlb).T.reshape(_nlb, _nlb, len_elem_vol)
+        assemble_x = np.transpose(assemble_y, (1, 0, 2))
+        csc_damp = coo_matrix((damp.ravel(),
+                               (assemble_x.ravel(), assemble_y.ravel())),
+                              shape=[len_vertices, len_vertices])
+        damp_global.append(csc_damp.tocsc())
+
+    return damp_global
+
 def assemble_A_3_FAST(domain_index_surf,number_ID_faces,NumElemC,NumNosC,elem_surf,nos,c0,rho0):
     
     Aa = []
@@ -632,6 +717,56 @@ def detJa_pre(Ja,GNi,rho0):
         argHe1[:,:,i] = (1/rho0)*(np.transpose(B[:,:,i] )@B[:,:,i])*detJa[i]
     return argHe1,detJa
 
+def compute_areas(vertices, faces):
+    """Calculate the area of all elements in the mesh.
+
+    Calls area_normal_ph to compute the area.
+
+    Parameters
+    ----------
+    vertices : numpy ndArray
+        The vertices in the mesh.
+    faces : numpy ndArray
+        The connectivity matrix of the mesh.
+
+    Returns
+    -------
+    areas : numpy 1dArray
+        the area of each triangle in the mesh.
+    """
+    areas = np.zeros((len(faces), 1))
+    for i in range(len(faces)):
+        rS = vertices[faces[i, :], :]
+        areas[i] = area_normal_ph(rS)
+    return numba.complex128(areas.ravel())
+
+@njit
+def area_normal_ph(re):
+    """Calculate the area of one triangle.
+
+    Parameters
+    ----------
+    re : numpy ndArray
+        The vertices in the triangle.
+
+
+    Returns
+    -------
+    area_elm : float
+        the area of a triangle.
+    """
+    xe = (re[:, 0])
+    ye = (re[:, 1])
+    ze = (re[:, 2])
+    # Formula de Heron - Area do Triangulo
+
+    a = np.sqrt((xe[0] - xe[1]) ** 2 + (ye[0] - ye[1]) ** 2 + (ze[0] - ze[1]) ** 2)
+    b = np.sqrt((xe[1] - xe[2]) ** 2 + (ye[1] - ye[2]) ** 2 + (ze[1] - ze[2]) ** 2)
+    c = np.sqrt((xe[2] - xe[0]) ** 2 + (ye[2] - ye[0]) ** 2 + (ze[2] - ze[0]) ** 2)
+    p = (a + b + c) / 2
+    area_elm = np.abs(np.sqrt(p * (p - a) * (p - b) * (p - c)))
+
+    return area_elm
 def int_tetra_4gauss(coord_el,c0,rho0):
 
     He = np.zeros([4,4],dtype='cfloat')
@@ -1087,7 +1222,15 @@ class FEM3D:
 
     @property
     def avg_spl(self):
-        return np.mean(self.spl, axis=0)
+        return np.mean(self.spl, axis=1)
+
+    @property
+    def spl_S(self):
+        return fd.p2SPL(self.pR.T/(1j*self.w*self.rho0)).T
+
+    @property
+    def avg_spl_S(self):
+        return np.mean(self.spl_S, axis=1)
 
     def compute(self,timeit=True,printless=True):
         """
@@ -1114,7 +1257,7 @@ class FEM3D:
         #     self.Q = np.zeros([self.NumNosC,self.NumNosC],dtype =  np.cfloat)
         # self.A = np.zeros([self.NumNosC,self.NumNosC,len(self.number_ID_faces)],dtype =  np.cfloat)
         self.q = np.zeros([self.NumNosC,1],dtype = np.cfloat)
-        
+        self.areas = compute_areas(self.nos, self.elem_surf)
         if len(self.rho) == 0:
             if self.H is None:
                 if self.order == 1:
@@ -1125,10 +1268,13 @@ class FEM3D:
             if self.BC != None:
                 
                 if self.order == 1:
-                    self.A = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                    # self.A = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                    self.A = assemble_surface_matrices(self.elem_surf, self.nos, self.areas, self.domain_index_surf, np.sort([*self.mu]), 1)
+                        # assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
                     if len(self.v) > 0:
-                        self.V = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
-                
+                        # self.V = assemble_A_3_FAST(self.domain_index_surf,np.sort([*self.v]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
+                        self.V = assemble_surface_matrices(self.elem_surf, self.nos, self.areas, self.domain_index_surf, np.sort([*self.v]), 1)
+
                 elif self.order == 2:
                     self.A = assemble_A10_3_FAST(self.domain_index_surf,np.sort([*self.mu]),self.NumElemC,self.NumNosC,self.elem_surf,self.nos,self.c0,self.rho0)
                     if len(self.v) > 0:
@@ -1152,7 +1298,7 @@ class FEM3D:
                             Ag += self.A[i]*self.mu[bl].ravel()[N]#/(self.rho0*self.c0)
                             i+=1
                         G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
-                        b = -1j*self.w[N]*self.q 
+                        b = -1j*self.w[N]*self.q
                         # ps = spsolve(G,b)
                         pSolve = pardisoSolver(G, mtype=13)
                         pSolve.run_pardiso(12)
@@ -1180,7 +1326,7 @@ class FEM3D:
                             Vn += self.V[i]*csc_matrix(V)
                             i+=1
                         G = self.H + 1j*self.w[N]*Ag - (self.w[N]**2)*self.Q
-                        b =  -1j*self.w[N]*Vn
+                        b = -1j*self.w[N]*Vn
                         pSolve = pardisoSolver(G, mtype=13)
                         pSolve.run_pardiso(12)
                         ps = pSolve.run_pardiso(33, b.todense())
@@ -1978,8 +2124,9 @@ class FEM3D:
         pio.renderers.default = renderer
         fig.show()
         
-    def plot_problem(self,renderer='notebook',saveFig=False,filename=None,
-                     camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,extension='png'):
+    def plot_problem(self,renderer='notebook',saveFig=False,filename=None, surface_opacity=0.3, surface_labels = None,
+                     camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,
+                     extension='png',centerc=None,eyec=None,upc=None, only_mesh=False, surface_visible=None):
         """
         Plots surface mesh, source and receivers in 3D.
         
@@ -1996,6 +2143,10 @@ class FEM3D:
         
         import plotly.figure_factory as ff
         import plotly.graph_objs as go
+
+
+        colors = 20 * ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880',
+                        '#FF97FF', '#FECB52']
         vertices = self.nos.T#[np.unique(self.elem_surf)].T
         elements = self.elem_surf.T
         fig = ff.create_trisurf(
@@ -2003,7 +2154,7 @@ class FEM3D:
             y=vertices[1, :],
             z=vertices[2, :],
             simplices=elements.T,
-            color_func=elements.shape[1] * ["rgb(255, 222, 173)"],
+            color_func=elements.shape[1] * ["rgb(225, 225, 225)"],
         )
         fig['data'][0].update(opacity=0.3)
         
@@ -2019,7 +2170,9 @@ class FEM3D:
                 fig.add_trace(go.Scatter3d(x = self.S.coord[:,0], y = self.S.coord[:,1], z = self.S.coord[:,2],name="Sources",mode='markers'))
         
         if self.BC != None:
-            
+            i = 0
+            if surface_visible is None:
+                surface_visible = self.number_ID_faces
             for bl in self.number_ID_faces:
                 indx = np.argwhere(self.domain_index_surf==bl)
                 con = self.elem_surf[indx,:][:,0,:]
@@ -2029,8 +2182,9 @@ class FEM3D:
                 x=vertices[0, :],
                 y=vertices[1, :],
                 z=vertices[2, :],
-                i=con[0, :], j=con[1, :], k=con[2, :],opacity=0.3,showlegend=True,visible=True,name=f'PG {int(bl)}'
-                ))
+                i=con[0, :], j=con[1, :], k=con[2, :],opacity=surface_opacity,showlegend=True,visible= True if bl in surface_visible else False, color = colors[i],
+                    name=f'PG {int(bl)}' if surface_labels is None else surface_labels[i]))
+                i+=1
                 # fig['data'][0].update(opacity=0.3)
             # 
                 # fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
@@ -2038,16 +2192,21 @@ class FEM3D:
         import plotly.io as pio
         pio.renderers.default = renderer
         
-        if title is False:
+        if title is None:
             fig.update_layout(title="")
         if transparent_bg:
             fig.update_layout({'plot_bgcolor': 'rgba(0, 0, 0, 0)',
                                'paper_bgcolor': 'rgba(0, 0, 0, 0)', }, )
+
+        if only_mesh is True:
+            fig = fd.plot_tools.remove_bg_and_axis(fig, 1)
+            fig.update_layout(showlegend=False)
+
         if saveFig:
             # folderCheck = os.path.exists('/Layout')
             # if folderCheck is False:
             #     os.mkdir('/Layout')
-            if filename is None:
+            if filename is None or camera_angles is not None:
                 for camera in camera_angles:
                     if camera == 'top' or camera == 'floorplan':
                         camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
@@ -2073,9 +2232,13 @@ class FEM3D:
                         camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
                                            up=dict(x=0, y=0, z=1),
                                            center=dict(x=0, y=0, z=0), )
+                    elif camera == 'custom':
+                        camera_dict = dict(eye=dict(x=eyec[0], y=eyec[1], z=eyec[2]),
+                                           up=dict(x=upc[0], y=upc[1], z=upc[2]),
+                                           center=dict(x=centerc[0], y=centerc[1], z=centerc[2]), )
                     fig.update_layout(scene_camera=camera_dict)
-    
-                    fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
+
+                    fig.write_image(filename + f'_3D_{camera}_.{extension}', scale=2)
             else:
                 fig.write_image(filename+'.'+extension, scale=2)
         fig.show()
@@ -2194,7 +2357,11 @@ class FEM3D:
         start = time.time()
         # Creating planes
         # self.mesh_room()
-        gmsh.initialize(sys.argv)
+        try:
+            gmsh.finalize()
+        except:
+            pass
+        gmsh.initialize()
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", gridsize * 0.95)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", gridsize)
         # model = self.model
@@ -2482,39 +2649,39 @@ class FEM3D:
             # folderCheck = os.path.exists('/Layout')
             # if folderCheck is False:
             #     os.mkdir('/Layout')
+            for camera in camera_angles:
+                if camera == 'top' or camera == 'floorplan':
+                    camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
+                                       up=dict(x=0, y=1, z=0),
+                                       center=dict(x=0, y=0, z=0), )
+                elif camera == 'lateral' or camera == 'side' or camera == 'section':
+                    camera_dict = dict(eye=dict(x=2.5, y=0., z=0.0),
+                                       up=dict(x=0, y=0, z=1),
+                                       center=dict(x=0, y=0, z=0), )
+                elif camera == 'front':
+                    camera_dict = dict(eye=dict(x=0., y=2.5, z=0.),
+                                       up=dict(x=0, y=1, z=0),
+                                       center=dict(x=0, y=0, z=0), )
+                elif camera == 'rear' or camera == 'back':
+                    camera_dict = dict(eye=dict(x=0., y=-2.5, z=0.),
+                                       up=dict(x=0, y=1, z=0),
+                                       center=dict(x=0, y=0, z=0), )
+                elif camera == 'diagonal_front':
+                    camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
+                                       up=dict(x=0, y=0, z=1),
+                                       center=dict(x=0, y=0, z=0), )
+                elif camera == 'diagonal_rear':
+                    camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
+                                       up=dict(x=0, y=0, z=1),
+                                       center=dict(x=0, y=0, z=0), )
+                elif camera == 'custom':
+                    camera_dict = dict(eye=dict(x=eyec[0], y=eyec[1], z=eyec[2]),
+                                       up=dict(x=upc[0], y=upc[1], z=upc[2]),
+                                       center=dict(x=centerc[0], y=centerc[1], z=centerc[2]), )
+                fig.update_layout(scene_camera=camera_dict)
+
             if filename is None:
-                for camera in camera_angles:
-                    if camera == 'top' or camera == 'floorplan':
-                        camera_dict = dict(eye=dict(x=0., y=0., z=2.5),
-                                           up=dict(x=0, y=1, z=0),
-                                           center=dict(x=0, y=0, z=0), )
-                    elif camera == 'lateral' or camera == 'side' or camera == 'section':
-                        camera_dict = dict(eye=dict(x=2.5, y=0., z=0.0),
-                                           up=dict(x=0, y=0, z=1),
-                                           center=dict(x=0, y=0, z=0), )
-                    elif camera == 'front':
-                        camera_dict = dict(eye=dict(x=0., y=2.5, z=0.),
-                                           up=dict(x=0, y=1, z=0),
-                                           center=dict(x=0, y=0, z=0), )
-                    elif camera == 'rear' or camera == 'back':
-                        camera_dict = dict(eye=dict(x=0., y=-2.5, z=0.),
-                                           up=dict(x=0, y=1, z=0),
-                                           center=dict(x=0, y=0, z=0), )
-                    elif camera == 'diagonal_front':
-                        camera_dict = dict(eye=dict(x=1.50, y=1.50, z=1.50),
-                                           up=dict(x=0, y=0, z=1),
-                                           center=dict(x=0, y=0, z=0), )
-                    elif camera == 'diagonal_rear':
-                        camera_dict = dict(eye=dict(x=-1.50, y=-1.50, z=1.50),
-                                           up=dict(x=0, y=0, z=1),
-                                           center=dict(x=0, y=0, z=0), )
-                    elif camera == 'custom':
-                        camera_dict = dict(eye=dict(x=eyec[0], y=eyec[1], z=eyec[2]),
-                                           up=dict(x=upc[0], y=upc[1], z=upc[2]),
-                                           center=dict(x=centerc[0], y=centerc[1], z=centerc[2]), )
-                    fig.update_layout(scene_camera=camera_dict)
-    
-                    fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
+                fig.write_image(f'_3D_{camera}_{time.strftime("%Y%m%d-%H%M%S")}.{extension}', scale=2)
             else:
                 fig.write_image(filename+'.'+extension, scale=2)
 
@@ -2780,15 +2947,28 @@ class FEM3D:
         if returnValues:
             return fm_average_rLw
 
-
-    def plot_freq(self, title= ""):
+    def plot_freq(self, average=False, labels=None, visible=None, hover_data=None, linewidth=5, linestyle=None,
+                  colors=None, alpha=1, mode="trace", fig=None, xlim=None, ylim=None, update_layout=True,
+                  fig_size=(900, 620), show_fig=True, save_fig=False, folder_path=None, ticks=None,
+                  folder_name="Frequency Response", filename="freq_response", title="",
+                  ylabel='SPL [dB]', jwrho=True):
         assert self.pR is not None
-        y_list = [self.spl]
-        return fd.plot_tools.freq_response_plotly(len(y_list)*[self.freq], y_list, labels=None, visible=None, hover_data=None, linewidth=5, linestyle=None,
-                             colors=None, alpha=1, mode="trace", fig=None, xlim=None, ylim=None, update_layout=True,
-                             fig_size=(900, 620), show_fig=True, save_fig=False, folder_path=None, ticks=None,
-                             folder_name="Frequency Response", filename="freq_response", title=title,
-                             ylabel='SPL [dB]')
+        if jwrho:
+            y_list = list(self.spl_S.T) if average == False else [self.avg_spl_S.T]
+        else:
+            y_list = list(self.spl.T) if average == False else [self.avg_spl.T]
+        fig = fd.plot_tools.freq_response_plotly(len(y_list) * [self.freq], y_list, labels=labels, visible=visible,
+                                                  hover_data=hover_data, linewidth=linewidth, linestyle=linestyle,
+                                                  colors=colors, alpha=alpha, mode=mode, fig=fig, xlim=xlim, ylim=ylim,
+                                                  update_layout=update_layout,
+                                                  fig_size=fig_size, show_fig=show_fig, save_fig=save_fig,
+                                                  folder_path=folder_path, ticks=ticks,
+                                                  folder_name=folder_name, filename=filename, title=title,
+                                                  ylabel=ylabel)
+
+        if self.F_n is not None:
+            for i in range(len(self.F_n)):
+                fig.add_vline(x = self.F_n[i], line_width=3, line_dash="dash", line_color="red")
 
     def fem_save(self, filename=time.strftime("%Y%m%d-%H%M%S"), ext = ".pickle"):
         """

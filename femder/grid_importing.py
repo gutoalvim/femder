@@ -28,8 +28,8 @@ def write_and_extract_mesh_data(mesh_data):
     mesh_file = meshio.read(out_data.name)
     mesh_data["vertices"] = mesh_file.points
     mesh_data["elem_surf"] = mesh_file.cells_dict["triangle"].astype("uint32")
-    # try:
     mesh_data["domain_index_surf"] = mesh_file.cell_data_dict["gmsh:physical"]["triangle"]
+
     try:
         mesh_data["domain_index_vol"] = mesh_file.cell_data_dict["gmsh:physical"]["tetra"]
         mesh_data["elem_vol"] = mesh_file.cells_dict["tetra"].astype("uint32")
@@ -98,13 +98,19 @@ class GridImport3D:
         self.path_to_geo_unrolled = None
         self.c0 = np.real(AP.c0)
 
+        try:
+            gmsh.finalize()
+        except:
+            pass
+
         filename, file_extension = os.path.splitext(path_to_geo)
         # print(file_extension)
         file_list = ['.geo','.geo_unrolled','.brep','.igs','.iges','.stp','.step', '.IGS']
         if file_extension in file_list:
             gmsh.initialize()
             gmsh.open(self.path_to_geo) # Open msh
-
+            if heal_shapes:
+                gmsh.model.occ.healShapes()
             gmsh.option.setNumber("Mesh.MeshSizeMax",(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1*(self.c0*self.scale)/self.fmax/self.num_freq)
             gmsh.option.setNumber("Mesh.Algorithm", 6)
@@ -327,3 +333,19 @@ class GridImport3D:
         gmsh.finalize()
 
 
+if __name__ == "__main__":
+    import femder as fd
+
+    path_to_geo = r'C:\Users\gutoa\Documents\Room Acoustics\Cipriano_Rina_Gargel\Room Study\Rinaldi_Study\Geom\room_mesh_MG_treatments - Copy.geo'
+    AP = fd.AirProperties(c0=343)
+    AC = fd.AlgControls(AP, 20, 200, 1)
+
+    # S = fd.Source("spherical")
+    # S.coord = np.array([[1.53/2,2.7+1.32,1.14],[-1.53/2,2.7+1.32,1.14]])
+    # S.q = np.array([[0.0001],[0.0001]])
+
+    # R = fd.Receiver()
+    # R.star([0,2.7,1.14],0.15)
+    grid = fd.GridImport3D(AP, path_to_geo, S=None, R=None, fmax=200, num_freq=6, scale=1, order=1,
+                           load_method="other", heal_shapes=False)
+    # grid.plot_mesh(True)
