@@ -11,6 +11,67 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 import matplotlib.ticker as ticker
 import scipy.signal.windows as win
+def len_unique_items_dict(dict_obj):
+    """
+    Computes biggest unique for dict
+    Parameters
+    ----------
+    dict_obj:dict
+
+    Returns
+    -------
+    Max unique for dict
+    """
+    bool_obj = np.asarray(list(dict_obj.items()), dtype=object)[:, 1]
+    unique_len = max([len(np.unique(bool_obj[i])) for i in range(len(bool_obj))])
+    return unique_len
+
+
+def bigger_than_n_unique_dict(dict_obj, n):
+    """
+    Computes indexes of keys with more than n unique items
+    Parameters
+    ----------
+    dict_obj: dict
+        Dictionary to operatoe
+    n: int
+
+    Returns
+    -------
+    Array of indexes
+    """
+    bool_obj = np.asarray(list(dict_obj.items()), dtype='object')[:, 1]
+    unique_len = np.argwhere(np.asarray([len(np.unique(bool_obj[i])) for i in range(len(bool_obj))]) > n).ravel()
+    return unique_len
+
+
+def timer_func(func):
+    """
+    Time function with decorator
+    Parameters
+    ----------
+    func: function
+
+    Returns
+    -------
+
+    """
+
+    def wrap_func(*args, **kwargs):
+        t1 = time()
+        result = func(*args, **kwargs)
+        t2 = time()
+        if not rasta.HIDE_PBAR:
+            print(f'Function {func.__name__!r} executed in {(t2 - t1):.4f}s')
+        return result
+
+    return wrap_func
+
+
+def nearest_multiple(x, multiple=0.05):
+    """Round a given number to the selected nearest multiple."""
+    return multiple * round(x / multiple)
+
 
 def find_nearest(array, value):
     """

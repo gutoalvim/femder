@@ -26,6 +26,7 @@ from scipy.sparse import csc_matrix
 from femder.utils import detect_peaks
 import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
+import plotly.io as pio
 
 from contextlib import contextmanager
 import sys, os
@@ -767,6 +768,7 @@ def area_normal_ph(re):
     area_elm = np.abs(np.sqrt(p * (p - a) * (p - b) * (p - c)))
 
     return area_elm
+
 def int_tetra_4gauss(coord_el,c0,rho0):
 
     He = np.zeros([4,4],dtype='cfloat')
@@ -1232,6 +1234,10 @@ class FEM3D:
     def avg_spl_S(self):
         return np.mean(self.spl_S, axis=1)
 
+    @property
+    def internal_volume(self):
+        return compute_volume(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+
     def compute(self,timeit=True,printless=True):
         """
         Computes acoustic pressure for every node in the mesh.
@@ -1261,7 +1267,11 @@ class FEM3D:
         if len(self.rho) == 0:
             if self.H is None:
                 if self.order == 1:
-                    self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+                    # self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
+                    fluid_c = {1: np.ones((len(self.elem_vol),)) * self.c0}
+                    fluid_rho = {1: np.ones((len(self.elem_vol),)) * self.rho0}
+                    det_ja, arg_stiff = fd.numerical.pre_compute_volume_assemble_vars(self.elem_vol,self.nos, 1)
+                    self.H,self.Q = fd.numerical.assemble_volume_matrices(self.elem_vol,self.nos, fluid_c, fluid_rho, 1, self.domain_index_vol, 0, det_ja, arg_stiff)
                 elif self.order == 2:
                     self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
                 #Assemble A(Amortecimento)
@@ -1284,8 +1294,9 @@ class FEM3D:
 
                 
                 # print('Solving System')
-                for ii in range(len(self.S.coord)):
-                    self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
+                if self.S is not None:
+                    for ii in range(len(self.S.coord)):
+                        self.q[closest_node(self.nos,self.S.coord[ii,:])] = self.S.q[ii].ravel()
                     
                 self.q = csc_matrix(self.q)
                 if len(self.v) == 0:
@@ -1305,7 +1316,7 @@ class FEM3D:
                         ps = pSolve.run_pardiso(33, b.todense())
                         pSolve.clear()
                         pN.append(ps)
-                if len(self.v) >0:
+                if len(self.v) > 0:
                     
                     for N in tqdm(range(len(self.freq))):
                     # ps = solve_damped_system(self.Q, self.H, self.A, self.number_ID_faces, self.mu, self.w, q, N)
@@ -1322,6 +1333,7 @@ class FEM3D:
                         i=0
                         for bl in np.sort([*self.v]):
                             indx = np.argwhere(self.domain_index_surf==bl)
+                            indx = np.unique(self.elem_surf[indx, :].ravel())
                             V[indx] = self.v[bl][N]
                             Vn += self.V[i]*csc_matrix(V)
                             i+=1
@@ -1417,11 +1429,89 @@ class FEM3D:
                 print(f'Time taken: {self.t/60} min')
             elif self.t >= 3600:
                 print(f'Time taken: {self.t/60} min')
-                
+
+    # def compute(self, timeit=True, printless=True):
+    #     """
+    #     Computes acoustic pressure for every node in the mesh.
+    #
+    #     Parameters
+    #     ----------
+    #     timeit : TYPE, optional
+    #         Prints solve time. The default is True.
+    #
+    #     Returns
+    #     -------
+    #     None.
+    #
+    #     """
+    #
+    #     node_pressure = []
+    #     damp_global_admittance = []
+    #     unique_velocity_index = fd.utils.bigger_than_n_unique_dict(self.v, 1)
+    #     self._pre_compute_vars = fd.numerical.pre_compute_volume_assemble_vars(self.elem_vol,
+    #                                                                         self.nos,
+    #                                                                         self.order)
+    #     # if self.eq_fluid_bool is True:
+    #
+    #     for frequency_index in tqdm(range(len(self.freq)), desc="FEM | " + self.active_src_str,
+    #                                 bar_format='{l_bar}{bar:25}{r_bar}'):
+    #         if self.eq_fluid_bool is True or frequency_index == 0:
+    #             self._global_stiff, self._global_mass = fd.numerical.assemble_volume_matrices(
+    #                 self.elem_vol,
+    #                 self.nos,
+    #                 self.c,
+    #                 self.rho,
+    #                 self.order,
+    #                 self.domain_index_vol, frequency_index, self._pre_compute_vars[0], self._pre_compute_vars[1])
+    #         i = 0
+    #
+    #         if self.admittance_bool is True or frequency_index == 0:
+    #             _damp_global_admittance = []
+    #             for_damp_obj = np.sort([*self._admittances])
+    #             for bl in for_damp_obj:
+    #                 _damp_global_admittance.append(self._global_damp[i] * self._admittances[bl][frequency_index] \
+    #                                                / (self._eq_fluid_c[1][0] * self._eq_fluid_rho[1][0]))
+    #                 i += 1
+    #             damp_global_admittance = sum(_damp_global_admittance)
+    #
+    #         if self.boundary_velocity_bool:
+    #             velocity_init = np.zeros([len(self.nos), 1], dtype=np.complex64)
+    #             boundary_velocity_vector = 0
+    #             i = 0
+    #             for bl in unique_velocity_index:
+    #                 velocity_index = np.argwhere(self.domain_index_surf == bl)
+    #                 con = self.elem_vol[velocity_index].ravel()
+    #                 velocity_init[con] = self.v[bl][frequency_index]
+    #                 boundary_velocity_vector += self._global_vel[i] * velocity_init
+    #                 i += 1
+    #             rhs_source_arg = self._source_vector + csc_matrix(boundary_velocity_vector)
+    #         else:
+    #             rhs_source_arg = self._source_vector
+    #
+    #         lhs = self._global_stiff + 1j * self.room.w0[frequency_index] * damp_global_admittance - (
+    #                 self.room.w0[frequency_index] ** 2) * self._global_mass
+    #         rhs = -1j * self.room.w0[frequency_index] * rhs_source_arg
+    #         fem_solver = pardisoSolver(lhs, mtype=13)
+    #         fem_solver.run_pardiso(12)
+    #         solution_data = fem_solver.run_pardiso(33, rhs.todense())
+    #         fem_solver.clear()
+    #         node_pressure.append(solution_data)
+    #
+    #     self._node_pressure = np.array(node_pressure, dtype="complex64")
+    #     self.clear()
+    #
+    #     if timeit:
+    #         if self.t <= 60:
+    #             print(f'Time taken: {self.t} s')
+    #         elif 60 < self.t < 3600:
+    #             print(f'Time taken: {self.t / 60} min')
+    #         elif self.t >= 3600:
+    #             print(f'Time taken: {self.t / 60} min')
+
     def optimize_source_receiver_pos(self,geometry_points, geometry_height, geometry_angle, num_freq, num_grid_pts,star_average=True,fmin=20,fmax=200,max_distance_from_wall=0.5,method='direct',
                                      minimum_distance_between_speakers=1.2,speaker_receiver_height=1.2,min_distance_from_backwall=0.6,
                                      max_distance_from_backwall=1.5,neigs=50,
-                                     plot_geom=False,renderer='notebook',plot_evaluate=False, plotBest=False,
+                                     plot_geom=False,renderer=None,plot_evaluate=False, plotBest=False,
                                      print_info=True,saveFig=False,camera_angles=['floorplan', 'section', 'diagonal'],timeit=True):
         """
         Implements a search for the best source-receiver configuration in a control room symmetric in the y axis.
@@ -1842,7 +1932,7 @@ class FEM3D:
             
         return self.pm
             
-    def modal_evaluate(self,freq,renderer='notebook',d_range = None,saveFig=False,filename=None,
+    def modal_evaluate(self,freq,renderer=None,d_range = None,saveFig=False,filename=None,
                      camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,extension='png'):
         """
         Plot modal pressure on the boundaries
@@ -1904,8 +1994,8 @@ class FEM3D:
  
         ))  
         fig.update_layout(title=dict(text = f'Frequency: {(np.real(self.F_n[fi])):.2f} Hz | Mode: {fi}'))
-        import plotly.io as pio
-        pio.renderers.default = renderer
+        if renderer is not None:
+            pio.renderers.default = renderer
         if title is False:
             fig.update_layout(title="")
         if transparent_bg:
@@ -2021,6 +2111,8 @@ class FEM3D:
         # else:
         #     for i in range(len(self.R.coord)):
         #         self.pR[:,i] = self.pN[:,closest_node(self.nos,R.coord[i,:])]
+        if len(self.pR.shape) == 1:
+            self.pR = self.pR.reshape(self.pN.shape[0],1)
         return self.pR
     
     def evaluate_physical_group(self,domain_index,average=True,plot=False):
@@ -2065,7 +2157,7 @@ class FEM3D:
         return self.pR
     
         
-    def surf_evaluate(self,freq,renderer='notebook',d_range = 45):
+    def surf_evaluate(self,freq,renderer=None,d_range = 45):
         """
         Evaluates pressure in the boundary of the mesh for a given frequency, and plots with plotly.
         Choose adequate rederer, if using Spyder or similar, use renderer='browser'.
@@ -2120,11 +2212,11 @@ class FEM3D:
         ))  
 
         fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
-        import plotly.io as pio
-        pio.renderers.default = renderer
+        if renderer is not None:
+            pio.renderers.default = renderer
         fig.show()
         
-    def plot_problem(self,renderer='notebook',saveFig=False,filename=None, surface_opacity=0.3, surface_labels = None,
+    def plot_problem(self,renderer=None,saveFig=False,filename=None, surface_opacity=0.3, surface_labels = None,
                      camera_angles=['floorplan', 'section', 'diagonal'],transparent_bg=True,title=None,
                      extension='png',centerc=None,eyec=None,upc=None, only_mesh=False, surface_visible=None):
         """
@@ -2189,8 +2281,8 @@ class FEM3D:
             # 
                 # fig['layout']['scene'].update(go.layout.Scene(aspectmode='data'))
                 
-        import plotly.io as pio
-        pio.renderers.default = renderer
+        if renderer is not None:
+            pio.renderers.default = renderer
         
         if title is None:
             fig.update_layout(title="")
@@ -2253,7 +2345,7 @@ class FEM3D:
                        axis_labels=['(X) Width [m]', '(Y) Length [m]', '(Z) Height [m]'], showgrid=True,
                        camera_angles=['floorplan', 'section', 'diagonal'], device='CPU',
                        transparent_bg=True, returnFig=False, show=True, filename=None,
-                       renderer='notebook',centerc=None,eyec=None,upc=None):
+                       renderer=None,centerc=None,eyec=None,upc=None):
         """
         Plots pressure field in boundaries and sections.
 
@@ -2533,7 +2625,8 @@ class FEM3D:
 
             values_boundary = np.real(p2SPL(self.pN[fi,uind]))  
         # Plotting
-        plotly.io.renderers.default = renderer
+        if renderer is not None:
+            plotly.io.renderers.default = renderer
 
         if info is False:
             showgrid = False
@@ -2951,12 +3044,19 @@ class FEM3D:
                   colors=None, alpha=1, mode="trace", fig=None, xlim=None, ylim=None, update_layout=True,
                   fig_size=(900, 620), show_fig=True, save_fig=False, folder_path=None, ticks=None,
                   folder_name="Frequency Response", filename="freq_response", title="",
-                  ylabel='SPL [dB]', jwrho=True):
+                  ylabel='SPL [dB]', jwrho=True, offset = 0, renderer=None):
         assert self.pR is not None
         if jwrho:
-            y_list = list(self.spl_S.T) if average == False else [self.avg_spl_S.T]
+            y_list = list(self.spl_S.T + offset) if average == False else [self.avg_spl_S.T + offset]
         else:
-            y_list = list(self.spl.T) if average == False else [self.avg_spl.T]
+            y_list = list(self.spl.T + offset) if average == False else [self.avg_spl.T + offset]
+
+        if labels is None:
+            if average:
+                labels = ["Average"]
+            else:
+                labels = [f"r_{i}" for i in range(len(y_list))]
+
         fig = fd.plot_tools.freq_response_plotly(len(y_list) * [self.freq], y_list, labels=labels, visible=visible,
                                                   hover_data=hover_data, linewidth=linewidth, linestyle=linestyle,
                                                   colors=colors, alpha=alpha, mode=mode, fig=fig, xlim=xlim, ylim=ylim,
@@ -2970,6 +3070,10 @@ class FEM3D:
             for i in range(len(self.F_n)):
                 fig.add_vline(x = self.F_n[i], line_width=3, line_dash="dash", line_color="red")
 
+        if renderer is not None:
+            pio.renderers.default = renderer
+
+        return fig
     def fem_save(self, filename=time.strftime("%Y%m%d-%H%M%S"), ext = ".pickle"):
         """
         Saves FEM3D simulation into a pickle file.

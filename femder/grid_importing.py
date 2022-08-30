@@ -107,7 +107,11 @@ class GridImport3D:
         # print(file_extension)
         file_list = ['.geo','.geo_unrolled','.brep','.igs','.iges','.stp','.step', '.IGS']
         if file_extension in file_list:
-            gmsh.initialize()
+            try:
+                gmsh.initialize()
+            except:
+                # gmsh.finalize()
+                gmsh.initialize()
             gmsh.open(self.path_to_geo) # Open msh
             if heal_shapes:
                 gmsh.model.occ.healShapes()
@@ -237,8 +241,6 @@ class GridImport3D:
         
             if plot:
                 gmsh.fltk.run()
-                import plotly.io as pio
-                pio.renderers.default = "browser"
                 import plotly.figure_factory as ff
                 import plotly.graph_objs as go
                 vertices = self.nos.T  # [np.unique(self.elem_surf)].T

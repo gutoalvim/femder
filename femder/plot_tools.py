@@ -19,16 +19,26 @@ import plotly.figure_factory as ff
 import plotly.graph_objs as go
 
 
+
 def set_plotly_renderer():
     """
     Automatic Plotly renderer setup.
     """
+    import re
+    import psutil
     if get_ipython().__class__.__name__ == "ZMQInteractiveShell":
-        pio.renderers.default = "notebook"
-    if 'google.colab' in sys.modules:
+        if any(re.search('jupyter-notebook', x)
+               for x in psutil.Process().parent().cmdline()):
+            pio.renderers.default = "notebook"
+        else:
+            pio.renderers.default = "jupyterlab"
+
+    elif 'google.colab' in sys.modules:
         pio.renderers.default = "colab"
     else:
         pio.renderers.default = "browser"
+
+    print(f"Default Plotly renderer: {pio.renderers.default}")
 
 
 def plot_2d_freq(x, y, xlabel=None, ylabel=None, save_fig=False, xlim=None, ylim=None, title=None, legend_list=[],
@@ -539,15 +549,6 @@ def freq_response_plotly(x_list, y_list, labels=None, visible=None, hover_data=N
     return fig
 
 
-
-def set_plotly_renderer():
-    """
-    Automatic Plotly renderer setup.
-    """
-    if get_ipython().__class__.__name__ == "ZMQInteractiveShell":
-        pio.renderers.default = "notebook"
-    else:
-        pio.renderers.default = "browser"
 
 
 def save_plotly_fig(fig, backend, filename, folder_path=None, folder_name=None, bg_transparency=True,
