@@ -118,10 +118,12 @@ class BC():
     def TMM(self,domain_index,TMM):
             
         from scipy import interpolate
-
-        f_real = interpolate.interp1d(TMM.freq.ravel(),np.real(TMM.y).ravel())
-        f_imag = interpolate.interp1d(TMM.freq.ravel(),np.imag(TMM.y).ravel())
-        mu_data = f_real(self.AC.freq).ravel() + 1j*f_imag(self.AC.freq).ravel()
+        if len(TMM.freq) != len(self.AC.freq):
+            f_real = interpolate.interp1d(TMM.freq.ravel(),np.real(TMM.y).ravel())
+            f_imag = interpolate.interp1d(TMM.freq.ravel(),np.imag(TMM.y).ravel())
+            mu_data = f_real(self.AC.freq).ravel() + 1j*f_imag(self.AC.freq).ravel()
+        else:
+            mu_data = TMM.y.ravel()
         self.mu[domain_index] = mu_data
         
         # if TMM.rhoc.any != None:

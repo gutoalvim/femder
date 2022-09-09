@@ -258,6 +258,16 @@ class GridImport3D:
                 fig.show()
 
             # gmsh.fltk.run()
+            elementTypes = gmsh.model.mesh.getElementTypes(2)
+
+            for t in elementTypes:
+                localCoords, weights = \
+                    gmsh.model.mesh.getIntegrationPoints(t, "Gauss" + str(1))
+
+                jacobians, determinants, coords = \
+                    gmsh.model.mesh.getJacobians(t, localCoords)
+
+            self.ja = jacobians
             path_name = os.path.dirname(self.path_to_geo)
             
             gmsh.write(path_name+'/current_mesh2.vtk')   
