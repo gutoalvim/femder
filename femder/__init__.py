@@ -18,6 +18,6 @@ from femder.utils import IR, SBIR
 from femder.BEM_3D import BEM3D
 from tmm.tmm import TMM
 from femder import plot_tools
-from femder import numerical
+from femder import fem_numerical
 
 plot_tools.set_plotly_renderer()

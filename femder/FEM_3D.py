@@ -415,6 +415,7 @@ def assemble_Q_H_4_FAST_2order(NumElemC,NumNosC,elem_vol,nos,c0,rho0):
     H = H.tocsc()
     Q = Q.tocsc()
     return H,Q
+
 def assemble_Q_H_4_FAST_2order_equifluid(NumElemC,NumNosC,elem_vol,nos,c,rho,domain_index_vol,fi):
 
     Hez = np.zeros([10,10,NumElemC])
@@ -1270,8 +1271,8 @@ class FEM3D:
                     # self.H,self.Q = assemble_Q_H_4_ULTRAFAST(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
                     fluid_c = {1: np.ones((len(self.elem_vol),)) * self.c0}
                     fluid_rho = {1: np.ones((len(self.elem_vol),)) * self.rho0}
-                    det_ja, arg_stiff = fd.numerical.pre_compute_volume_assemble_vars(self.elem_vol,self.nos, 1)
-                    self.H,self.Q = fd.numerical.assemble_volume_matrices(self.elem_vol,self.nos, fluid_c, fluid_rho, 1, self.domain_index_vol, 0, det_ja, arg_stiff)
+                    det_ja, arg_stiff = fd.fem_numerical.pre_compute_volume_assemble_vars(self.elem_vol,self.nos, 1)
+                    self.H,self.Q = fd.fem_numerical.assemble_volume_matrices(self.elem_vol,self.nos, fluid_c, fluid_rho, 1, self.domain_index_vol, 0, det_ja, arg_stiff)
                 elif self.order == 2:
                     self.H,self.Q = assemble_Q_H_4_FAST_2order(self.NumElemC,self.NumNosC,self.elem_vol,self.nos,self.c0,self.rho0)
                 #Assemble A(Amortecimento)
