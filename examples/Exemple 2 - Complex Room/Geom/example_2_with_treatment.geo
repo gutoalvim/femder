@@ -1,4 +1,4 @@
-Merge "room_mesh_MG_treatments.brep";
+Merge "example_2_with_treatment.brep";
 //+
 Physical Surface(6) = {78, 81, 134, 92, 108, 93, 95, 96, 90, 84};
 //+
