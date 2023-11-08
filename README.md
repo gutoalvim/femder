@@ -23,7 +23,11 @@ $conda activate myenv
 
 $conda install git
 
-$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle pymoo pymkl
+$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle pymoo
+
+$pip install more-itertools pytta git+https://github.com/rinaldipp/PyMKL mkl
+
+$conda install seaborn
 
 $conda install -c plotly plotly-orca
 
