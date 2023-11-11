@@ -1,52 +1,58 @@
 # femder
+
 A Finite Element Method (FEM) code for acoustics written for my undergraduate class "Métodos Numéricos em Acústica e Vibrações", lectured by Dr. Paulo Mareze.
 
 Author: Luiz Augusto T. Ferraz Alvim
 
 Co-Author: Dr. Paulo Mareze
 
-# Dependencies
+## Installation
 
-numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle geneticalgorithm
+- Prerequisites:
 
-# How to Install on Windows
+  - Git
+  - Python >= 3.8
+  - Conda package manager (You can get it by downloading Miniconda 3 at <https://docs.conda.io/projects/miniconda/en/latest/>)
 
-# 1) Download Miniconda 3 for your system. https://docs.conda.io/en/latest/miniconda.html
+1. In **Anaconda Prompt** create and activate a new env:
 
-# 2) In Anaconda Prompt create a new env:
+   ```
+   $ conda create -n myenv python=3.8
 
-$conda create -n myenv python=3.8
+   $ conda activate myenv
+   ```
 
-$conda activate myenv
+2. Install non-python dependencies:
 
-# 3) Install all dependencies:
+   ```
+   $ conda install -c plotly plotly-orca
+   ```
 
-$conda install git
+3. Install femder:
 
-$pip install numpy scipy gmsh meshio plotly matplotlib tqdm numba cloudpickle pymoo
+   ```
+   $ pip install git+https://github.com/gutoalvim/femder.git
+   ```
 
-$pip install more-itertools pytta git+https://github.com/rinaldipp/PyMKL mkl
+4. Install your IDE of choice, Jupyter Notebook is great to run this package and do your work in an organized fashion. You can install it using:
 
-$conda install seaborn
+   ```
+   $ pip install notebook
+   ```
 
-$conda install -c plotly plotly-orca
+## Running the examples
 
-# 4) Install Femder:
+For running some examples under `examples` directory some additional packages are required,
+you can install them using:
 
-$ git clone https://github.com/gutoalvim/femder.git
+```
+$ pip install kaleido more-itertools geneticalgorithm
+```
 
-$ cd femder
+---
 
-$ python setup.py install
-
-# 5) Install your IDE of choice, Jupyter Notebook is great to run this package and do your work in a organized fashion.
-
-pip install jupyter notebook
-
-# ---------
 Have fun doing acoustics, if you have any thoughts, issues, suggestions, let me know here on Git or send me an email (luiz.alvim@eac.ufsm.br)
 
 Special thanks to my teacher Dr. Paulo Mareze, Dr. Eric Brandao and my friend Alexandre Piccini for guiding me to the FEM mountains.
 
 I would also like to thank my great friend Rinaldi Petrolli.
-

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["femder"]
+
+[project]
+name = "femder"
+version = "0.0.1"
+authors = [
+  { name="Luiz Augusto Alvim", email="luiz.alvim@eac.ufsm.br" },
+]
+description = "A simple acoustic FEM package"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "cloudpickle",
+  "gmsh",
+  "ipython",
+  "matplotlib",
+  "meshio",
+  "mkl",
+  "numba",
+  "numpy",
+  "plotly",
+  "psutil",
+  "pyMKL @ git+https://github.com/rinaldipp/pyMKL",
+  "pymoo",
+  "pytta",
+  "scipy",
+  "seaborn",
+  "tmm @ git+https://github.com/rinaldipp/tmm",
+  "tqdm",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/gutoalvim/femder"
+"Bug Tracker" = "https://github.com/gutoalvim/femder/issues"
